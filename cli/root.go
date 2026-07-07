@@ -77,7 +77,11 @@ func newRootCommand() *cobra.Command {
 		newSearchTasksCommand(),
 		newGetTaskCommand(),
 		newListTaskStoriesCommand(),
+		newListTaskAttachmentsCommand(),
+		newGetAttachmentCommand(),
+		newDownloadAttachmentCommand(),
 		newCommentOnTaskCommand(),
+		newUpdateTaskCommand(),
 	)
 
 	return root

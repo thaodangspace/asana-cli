@@ -67,6 +67,7 @@ type resource struct {
 	Completed       *bool  `json:"completed"`
 	Text            string `json:"text"`
 	ResourceSubtype string `json:"resource_subtype"`
+	Host            string `json:"host"`
 	CreatedBy       *struct {
 		Name string `json:"name"`
 	} `json:"created_by"`
@@ -142,6 +143,22 @@ func summarizeStory(raw json.RawMessage) string {
 		body = "(story)"
 	}
 	return fmt.Sprintf("%s %s%s", orUnknown(r.GID), author, body)
+}
+
+func summarizeAttachment(raw json.RawMessage) string {
+	r := parseResource(raw)
+	name := r.Name
+	if name == "" {
+		name = "(unnamed attachment)"
+	}
+	kind := r.Host
+	if kind == "" {
+		kind = r.ResourceSubtype
+	}
+	if kind == "" {
+		return fmt.Sprintf("%s %s", orUnknown(r.GID), name)
+	}
+	return fmt.Sprintf("%s %s [%s]", orUnknown(r.GID), name, kind)
 }
 
 // humanList joins per-item summaries, or returns emptyMsg when there are none.

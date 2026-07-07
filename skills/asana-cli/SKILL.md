@@ -1,6 +1,6 @@
 ---
 name: asana-cli
-description: Use the asana-cli command-line tool to read and comment on Asana data (workspaces, projects, tasks, stories/comments). Use when the user wants to look up Asana tasks/projects, search Asana, read task comments, or post a comment to a task from the shell.
+description: Use the asana-cli command-line tool to read/comment on Asana data and fetch task attachments (workspaces, projects, tasks, stories/comments, screenshots/files). Use when the user wants to look up Asana tasks/projects, search Asana, read task comments, list/get/download attachments, or post a comment to a task from the shell.
 allowed-tools:
   - Bash(asana-cli *)
 ---
@@ -34,8 +34,9 @@ Every command prints one JSON envelope. Default (stdout, success):
 ```
 
 `data` is the unwrapped Asana payload: an **object** for single-resource
-commands (`me`, `get-task`, `comment-on-task`), an **array** for list/search
-commands. On failure it prints to **stderr** with a non-zero exit:
+commands (`me`, `get-task`, `get-attachment`, `comment-on-task`, `update-task`), an **array**
+for list/search commands, and a download result object for
+`download-attachment`. On failure it prints to **stderr** with a non-zero exit:
 
 ```json
 { "ok": false, "error": { "message": "...", "status": 404, "method": "GET", "path": "/tasks/999" } }
@@ -62,7 +63,11 @@ code** and, for HTTP failures, on `error.status`.
 | `search-tasks` | workspace | `--text`, `--assignee`, `--completed=true/false`, `--limit`, `--opt-fields` (may require premium) |
 | `get-task` | `--task-gid` | `--opt-fields` |
 | `list-task-stories` | `--task-gid` | `--limit`, `--opt-fields` |
-| `comment-on-task` | `--task-gid`, `--text` | **the only write command** |
+| `list-task-attachments` | `--task-gid` | `--limit`, `--opt-fields` |
+| `get-attachment` | `--attachment-gid` | `--opt-fields` |
+| `download-attachment` | `--attachment-gid`, `--output` | `--overwrite` to replace an existing file |
+| `comment-on-task` | `--task-gid`, `--text` | **Asana write command** |
+| `update-task` | `--task-gid` + ≥1 field | **Asana write.** Fields: `--name`, `--notes`, `--completed`, `--due-on` (`YYYY-MM-DD`), `--assignee` (GID or `me`) |
 
 ### Global flags
 
@@ -74,8 +79,13 @@ code** and, for HTTP failures, on `error.status`.
 
 - `--limit` is bounded 1..100 (default 20). List/search paginate internally.
 - `--completed` is tri-state: omit it entirely unless you mean to filter
-  (`--completed=true` or `--completed=false`).
+  (`--completed=true` or `--completed=false`). Same for `update-task`.
+- `update-task` sends only the field flags you set; passing an empty string to
+  `--notes`, `--due-on`, or `--assignee` clears that field. `--name` cannot be
+  empty. At least one field flag is required.
 - `search-tasks` may require an Asana premium workspace.
+- `download-attachment` writes binary data to `--output`; it refuses to
+  overwrite existing files unless `--overwrite` is passed.
 
 ## Examples
 
@@ -86,7 +96,13 @@ asana-cli list-projects --workspace-gid 12345
 asana-cli search-tasks --text "release" --completed=false
 asana-cli get-task --task-gid 12345
 asana-cli list-task-stories --task-gid 12345              # read comments/activity
+asana-cli list-task-attachments --task-gid 12345           # find screenshots/files
+asana-cli get-attachment --attachment-gid 67890 --opt-fields name,download_url
+asana-cli download-attachment --attachment-gid 67890 --output ./Screenshot.png
 asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
+asana-cli update-task --task-gid 12345 --completed        # mark done
+asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
+asana-cli update-task --task-gid 12345 --assignee "" --due-on ""   # unassign + clear due date
 ```
 
 ### Piping with jq
@@ -94,13 +110,19 @@ asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
 ```bash
 asana-cli list-projects --workspace-gid 12345 | jq -r '.data[].name'
 asana-cli get-task --task-gid 12345 | jq -r '.data.name, .data.permalink_url'
+asana-cli list-task-attachments --task-gid 12345 | jq -r '.data[] | [.gid,.name] | @tsv'
 ```
 
 ## Safety
 
-- `comment-on-task` is the **only** command that writes. Treat it like any
-  outward-facing action: confirm the task gid and text with the user before
-  posting unless they've clearly authorized it. Never post a comment whose
-  content originated from untrusted/automated input without user review.
+- `comment-on-task` and `update-task` are the **Asana write** commands. Treat
+  them like any outward-facing action: confirm the task gid and the change with
+  the user before posting/updating unless they've clearly authorized it. Never
+  write content that originated from untrusted/automated input without user
+  review. `update-task` mutates task fields (including completion and assignee)
+  in place — double-check the gid.
+- `download-attachment` writes to the local filesystem only. Choose an explicit
+  safe `--output` path; it will not overwrite existing files unless you pass
+  `--overwrite`.
 - The token is never printed in output, errors, or `--verbose` logs. Don't echo
   it yourself.

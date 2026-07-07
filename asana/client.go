@@ -95,13 +95,24 @@ func EncodePathSegment(value string) string {
 // buildURL resolves a path or absolute URL against the base, mirroring the
 // extension's buildUrl behavior.
 func (c *Client) buildURL(pathOrURL string) string {
-	if strings.HasPrefix(pathOrURL, "https://") {
+	if strings.HasPrefix(pathOrURL, "https://") || strings.HasPrefix(pathOrURL, "http://") {
 		return pathOrURL
 	}
 	if strings.HasPrefix(pathOrURL, "/") {
 		return c.baseURL + pathOrURL
 	}
 	return c.baseURL + "/" + pathOrURL
+}
+
+func displayPath(pathOrURL string) string {
+	u, err := url.Parse(pathOrURL)
+	if err == nil && u.IsAbs() {
+		if u.Path == "" {
+			return "/"
+		}
+		return u.Path
+	}
+	return pathOrURL
 }
 
 func excerpt(body []byte) string {
@@ -163,6 +174,47 @@ func (c *Client) Request(ctx context.Context, method, pathOrURL string, body any
 	}
 
 	return json.RawMessage(payload), nil
+}
+
+// Download performs an authenticated GET and streams the response body to w.
+// It is intended for attachment download_url values and does not JSON-decode
+// successful responses.
+func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (int64, error) {
+	fullURL := c.buildURL(pathOrURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	safePath := displayPath(pathOrURL)
+	if c.verbose && c.logw != nil {
+		fmt.Fprintf(c.logw, "%s %s\n", http.MethodGet, safePath)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		payload, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return 0, readErr
+		}
+		return 0, &HTTPError{
+			Method:          http.MethodGet,
+			URL:             fullURL,
+			Path:            safePath,
+			Status:          resp.StatusCode,
+			StatusText:      http.StatusText(resp.StatusCode),
+			ResponseExcerpt: excerpt(payload),
+		}
+	}
+
+	return io.Copy(w, resp.Body)
 }
 
 // page is the envelope returned by Asana collection endpoints.

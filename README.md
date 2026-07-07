@@ -68,7 +68,8 @@ Keep the file private (`chmod 600 ~/.config/asana-cli.yaml`).
 commands require either it or an explicit `--workspace-gid`.
 
 Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
-`tasks:read`, `stories:read`, and `stories:write` for `comment-on-task`.
+`tasks:read`, `stories:read`, `attachments:read`, `stories:write` for
+`comment-on-task`, and `tasks:write` for `update-task`.
 
 ## Global flags
 
@@ -88,7 +89,11 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `search-tasks` | `GET /workspaces/{ws}/tasks/search` | `--text`, `--assignee`, `--completed`, `--limit`, `--opt-fields` (may require premium) |
 | `get-task` | `GET /tasks/{gid}` | `--task-gid` (required), `--opt-fields` |
 | `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), `--limit`, `--opt-fields` |
-| `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). The only write command. |
+| `list-task-attachments` | `GET /attachments?parent={task_gid}` | `--task-gid` (required), `--limit`, `--opt-fields` |
+| `get-attachment` | `GET /attachments/{gid}` | `--attachment-gid` (required), `--opt-fields` |
+| `download-attachment` | `GET /attachments/{gid}` then attachment `download_url` | `--attachment-gid`, `--output` (both required), `--overwrite` |
+| `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
+| `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 of `--name`, `--notes`, `--completed`, `--due-on`, `--assignee`. Write command. |
 
 `--limit` is bounded to 1..100 (default 20). List/search commands paginate
 internally (page size 50, up to 10 pages, capped at `--limit`).
@@ -108,7 +113,8 @@ internally (page size 50, up to 10 pages, capped at `--limit`).
 ```
 
 `data` is the unwrapped Asana payload: an object for single-resource commands
-(`me`, `get-task`, `comment-on-task`), an array for list/search commands.
+(`me`, `get-task`, `get-attachment`, `comment-on-task`, `update-task`), an array for
+list/search commands, and a download result object for `download-attachment`.
 
 **Error** (stderr, non-zero exit):
 
@@ -144,7 +150,14 @@ asana-cli list-projects --workspace-gid 12345
 asana-cli search-tasks --text "release" --completed=false
 asana-cli get-task --task-gid 12345 --human
 asana-cli list-task-stories --task-gid 12345
+asana-cli list-task-attachments --task-gid 12345
+asana-cli get-attachment --attachment-gid 67890 --opt-fields name,download_url
+asana-cli download-attachment --attachment-gid 67890 --output ./Screenshot.png
 asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
+asana-cli update-task --task-gid 12345 --completed
+asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
+asana-cli update-task --task-gid 12345 --assignee me --notes "Reassigned."
+asana-cli update-task --task-gid 12345 --due-on ""   # clears the due date
 ```
 
 ## Test
@@ -163,5 +176,9 @@ The token is read from the environment or, as a fallback, from
 `~/.config/asana-cli.yaml`. The CLI never writes the token to disk itself
 (you create the config file) and never includes it in any rendered output,
 error, or `--verbose` log line. If you store the token in the config file,
-restrict its permissions (`chmod 600`). All requests go over HTTPS to
+restrict its permissions (`chmod 600`). All API requests go over HTTPS to
 `https://app.asana.com/api/1.0`.
+
+`download-attachment` writes attachment bytes only to the file named by
+`--output`. It refuses to overwrite existing files unless `--overwrite` is
+provided and removes partial output files when a download fails.

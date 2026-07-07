@@ -18,6 +18,7 @@ func runWithServer(t *testing.T, h http.HandlerFunc, args ...string) (string, er
 	t.Setenv("ASANA_ACCESS_TOKEN", "tok")
 	t.Setenv("ASANA_DEFAULT_WORKSPACE", "")
 	t.Setenv("ASANA_API_BASE", srv.URL)
+	t.Setenv("ASANA_CONFIG", t.TempDir()+"/absent.yaml")
 
 	root := newRootCommand()
 	var out bytes.Buffer
@@ -231,6 +232,7 @@ func TestUnknownFlagIsUsageError(t *testing.T) {
 func TestMissingTokenIsUsageError(t *testing.T) {
 	t.Setenv("ASANA_ACCESS_TOKEN", "")
 	t.Setenv("ASANA_API_BASE", "")
+	t.Setenv("ASANA_CONFIG", t.TempDir()+"/absent.yaml")
 	root := newRootCommand()
 	var out bytes.Buffer
 	root.SetOut(&out)

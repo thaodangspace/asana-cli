@@ -1,6 +1,7 @@
 package asana
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -156,11 +157,58 @@ func TestBuildURL(t *testing.T) {
 		"/users/me":                 "https://api.example/x/users/me",
 		"users/me":                  "https://api.example/x/users/me",
 		"https://other.example/abs": "https://other.example/abs",
+		"http://other.example/abs":  "http://other.example/abs",
 	}
 	for in, want := range cases {
 		if got := c.buildURL(in); got != want {
 			t.Errorf("buildURL(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestDownloadSuccessAndHeaders(t *testing.T) {
+	var gotAuth, gotAccept string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotAccept = r.Header.Get("Accept")
+		w.Write([]byte("file-bytes"))
+	})
+
+	var out bytes.Buffer
+	written, err := c.Download(context.Background(), "/download", &out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if written != int64(len("file-bytes")) || out.String() != "file-bytes" {
+		t.Errorf("written = %d body = %q", written, out.String())
+	}
+	if gotAuth != "Bearer secret-token" {
+		t.Errorf("Authorization = %q", gotAuth)
+	}
+	if gotAccept != "application/octet-stream" {
+		t.Errorf("Accept = %q", gotAccept)
+	}
+}
+
+func TestDownloadHTTPErrorUsesSafePath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte("failed"))
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient("secret-token", srv.Client(), WithBaseURL("https://api.example"))
+
+	var out bytes.Buffer
+	_, err := c.Download(context.Background(), srv.URL+"/download?signature=secret", &out)
+	var he *HTTPError
+	if !asHTTPError(err, &he) {
+		t.Fatalf("expected HTTPError, got %v", err)
+	}
+	if he.Path != "/download" {
+		t.Errorf("path = %q", he.Path)
+	}
+	if strings.Contains(err.Error(), "secret-token") || strings.Contains(he.Path, "signature=secret") {
+		t.Errorf("sensitive value leaked into error/path: %v path=%q", err, he.Path)
 	}
 }
 
