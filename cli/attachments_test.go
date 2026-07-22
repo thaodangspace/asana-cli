@@ -2,10 +2,12 @@ package cli
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -242,6 +244,145 @@ func TestDownloadAttachmentFailureRemovesPartialOutput(t *testing.T) {
 	}
 	if _, statErr := os.Stat(outPath); !os.IsNotExist(statErr) {
 		t.Errorf("output exists after failed download: %v", statErr)
+	}
+}
+
+func TestAddAttachmentCommand(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "Screenshot.png")
+	if err := os.WriteFile(filePath, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	var gotPath, gotAuth, gotContentType string
+	var gotParent, gotName, gotFileName, gotFileBody string
+	out, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse multipart: %v", err)
+		}
+		gotParent = r.FormValue("parent")
+		gotName = r.FormValue("name")
+		file, hdr, ferr := r.FormFile("file")
+		if ferr != nil {
+			t.Errorf("form file: %v", ferr)
+		} else {
+			gotFileName = hdr.Filename
+			body, _ := io.ReadAll(file)
+			gotFileBody = string(body)
+			file.Close()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"gid":"att9","name":"Screenshot.png","resource_type":"attachment"}}`))
+	}, "add-attachment", "--task-gid", "42", "--file", filePath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotPath != "/attachments" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if gotAuth != "Bearer tok" {
+		t.Errorf("auth = %q", gotAuth)
+	}
+	if !strings.HasPrefix(gotContentType, "multipart/form-data") {
+		t.Errorf("content-type = %q", gotContentType)
+	}
+	if gotParent != "42" {
+		t.Errorf("parent = %q", gotParent)
+	}
+	if gotName != "Screenshot.png" {
+		t.Errorf("name field = %q", gotName)
+	}
+	if gotFileName != "Screenshot.png" {
+		t.Errorf("file name = %q", gotFileName)
+	}
+	if gotFileBody != "png-bytes" {
+		t.Errorf("file body = %q", gotFileBody)
+	}
+	var attachment struct {
+		GID  string `json:"gid"`
+		Name string `json:"name"`
+	}
+	decodeData(t, out, &attachment)
+	if attachment.GID != "att9" || attachment.Name != "Screenshot.png" {
+		t.Errorf("attachment = %+v", attachment)
+	}
+}
+
+func TestAddAttachmentNameOverride(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "Screenshot.png")
+	if err := os.WriteFile(filePath, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	var gotName, gotFileName string
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse multipart: %v", err)
+		}
+		gotName = r.FormValue("name")
+		if _, hdr, ferr := r.FormFile("file"); ferr == nil {
+			gotFileName = hdr.Filename
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"gid":"att9","name":"custom.png"}}`))
+	}, "add-attachment", "--task-gid", "42", "--file", filePath, "--name", "custom.png")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotName != "custom.png" {
+		t.Errorf("name field = %q", gotName)
+	}
+	if gotFileName != "custom.png" {
+		t.Errorf("file name = %q", gotFileName)
+	}
+}
+
+func TestAddAttachmentMissingFlagsAreUsageErrors(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "x.png")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	tests := [][]string{
+		{"add-attachment", "--file", filePath},
+		{"add-attachment", "--task-gid", "42"},
+	}
+	for _, args := range tests {
+		_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+			t.Error("server should not be called")
+		}, args...)
+		if exitCodeFor(err) != exitUsage {
+			t.Errorf("%v exit code = %d, want %d", args, exitCodeFor(err), exitUsage)
+		}
+	}
+}
+
+func TestAddAttachmentNonexistentFileIsUsageError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope.png")
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	}, "add-attachment", "--task-gid", "42", "--file", missing)
+	if exitCodeFor(err) != exitUsage {
+		t.Errorf("exit code = %d, want %d", exitCodeFor(err), exitUsage)
+	}
+}
+
+func TestAddAttachmentAPIErrorDoesNotLeakToken(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "x.png")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("boom"))
+	}, "add-attachment", "--task-gid", "42", "--file", filePath)
+	if exitCodeFor(err) != exitRuntime {
+		t.Errorf("exit code = %d, want %d", exitCodeFor(err), exitRuntime)
+	}
+	if err != nil && strings.Contains(err.Error(), "tok") {
+		t.Errorf("error leaks token: %v", err)
 	}
 }
 

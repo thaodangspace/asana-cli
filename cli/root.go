@@ -80,6 +80,7 @@ func newRootCommand() *cobra.Command {
 		newListTaskAttachmentsCommand(),
 		newGetAttachmentCommand(),
 		newDownloadAttachmentCommand(),
+		newAddAttachmentCommand(),
 		newCommentOnTaskCommand(),
 		newUpdateTaskCommand(),
 	)

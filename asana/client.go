@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -215,6 +216,69 @@ func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (i
 	}
 
 	return io.Copy(w, resp.Body)
+}
+
+// Upload performs an authenticated multipart/form-data POST, streaming file
+// content from r as the form field named fileField (with the given fileName).
+// Additional simple text fields are sent from the fields map. It returns the
+// raw response body; a non-2xx status yields an *HTTPError. The token is never
+// logged.
+func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string]string, fileField, fileName string, r io.Reader) (json.RawMessage, error) {
+	fullURL := c.buildURL(pathOrURL)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		if err := mw.WriteField(k, v); err != nil {
+			return nil, fmt.Errorf("write form field %s: %w", k, err)
+		}
+	}
+	part, err := mw.CreateFormFile(fileField, fileName)
+	if err != nil {
+		return nil, fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, r); err != nil {
+		return nil, fmt.Errorf("copy file content: %w", err)
+	}
+	if err := mw.Close(); err != nil {
+		return nil, fmt.Errorf("finalize multipart body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	if c.verbose && c.logw != nil {
+		fmt.Fprintf(c.logw, "%s %s\n", http.MethodPost, displayPath(pathOrURL))
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &HTTPError{
+			Method:          http.MethodPost,
+			URL:             fullURL,
+			Path:            pathOrURL,
+			Status:          resp.StatusCode,
+			StatusText:      http.StatusText(resp.StatusCode),
+			ResponseExcerpt: excerpt(payload),
+		}
+	}
+
+	return json.RawMessage(payload), nil
 }
 
 // page is the envelope returned by Asana collection endpoints.

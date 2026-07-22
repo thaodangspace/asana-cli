@@ -68,8 +68,9 @@ Keep the file private (`chmod 600 ~/.config/asana-cli.yaml`).
 commands require either it or an explicit `--workspace-gid`.
 
 Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
-`tasks:read`, `stories:read`, `attachments:read`, `stories:write` for
-`comment-on-task`, and `tasks:write` for `update-task`.
+`tasks:read`, `stories:read`, `attachments:read`, `attachments:write` for
+`add-attachment`, `stories:write` for `comment-on-task`, and `tasks:write` for
+`update-task`.
 
 ## Global flags
 
@@ -92,6 +93,7 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `list-task-attachments` | `GET /attachments?parent={task_gid}` | `--task-gid` (required), `--limit`, `--opt-fields` |
 | `get-attachment` | `GET /attachments/{gid}` | `--attachment-gid` (required), `--opt-fields` |
 | `download-attachment` | `GET /attachments/{gid}` then attachment `download_url` | `--attachment-gid`, `--output` (both required), `--overwrite` |
+| `add-attachment` | `POST /attachments` (multipart) | `--task-gid`, `--file` (both required), `--name`. Write command. |
 | `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 of `--name`, `--notes`, `--completed`, `--due-on`, `--assignee`. Write command. |
 
@@ -113,8 +115,9 @@ internally (page size 50, up to 10 pages, capped at `--limit`).
 ```
 
 `data` is the unwrapped Asana payload: an object for single-resource commands
-(`me`, `get-task`, `get-attachment`, `comment-on-task`, `update-task`), an array for
-list/search commands, and a download result object for `download-attachment`.
+(`me`, `get-task`, `get-attachment`, `add-attachment`, `comment-on-task`,
+`update-task`), an array for list/search commands, and a download result object
+for `download-attachment`.
 
 **Error** (stderr, non-zero exit):
 
@@ -153,6 +156,8 @@ asana-cli list-task-stories --task-gid 12345
 asana-cli list-task-attachments --task-gid 12345
 asana-cli get-attachment --attachment-gid 67890 --opt-fields name,download_url
 asana-cli download-attachment --attachment-gid 67890 --output ./Screenshot.png
+asana-cli add-attachment --task-gid 12345 --file ./Screenshot.png
+asana-cli add-attachment --task-gid 12345 --file ./out.log --name "run.log"
 asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
 asana-cli update-task --task-gid 12345 --completed
 asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15

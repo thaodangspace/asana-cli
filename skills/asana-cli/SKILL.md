@@ -1,6 +1,6 @@
 ---
 name: asana-cli
-description: Use the asana-cli command-line tool to read/comment on Asana data and fetch task attachments (workspaces, projects, tasks, stories/comments, screenshots/files). Use when the user wants to look up Asana tasks/projects, search Asana, read task comments, list/get/download attachments, or post a comment to a task from the shell.
+description: Use the asana-cli command-line tool to read/comment on Asana data and fetch or upload task attachments (workspaces, projects, tasks, stories/comments, screenshots/files). Use when the user wants to look up Asana tasks/projects, search Asana, read task comments, list/get/download/add attachments, or post a comment to a task from the shell.
 allowed-tools:
   - Bash(asana-cli *)
 ---
@@ -34,9 +34,10 @@ Every command prints one JSON envelope. Default (stdout, success):
 ```
 
 `data` is the unwrapped Asana payload: an **object** for single-resource
-commands (`me`, `get-task`, `get-attachment`, `comment-on-task`, `update-task`), an **array**
-for list/search commands, and a download result object for
-`download-attachment`. On failure it prints to **stderr** with a non-zero exit:
+commands (`me`, `get-task`, `get-attachment`, `add-attachment`,
+`comment-on-task`, `update-task`), an **array** for list/search commands, and a
+download result object for `download-attachment`. On failure it prints to
+**stderr** with a non-zero exit:
 
 ```json
 { "ok": false, "error": { "message": "...", "status": 404, "method": "GET", "path": "/tasks/999" } }
@@ -66,6 +67,7 @@ code** and, for HTTP failures, on `error.status`.
 | `list-task-attachments` | `--task-gid` | `--limit`, `--opt-fields` |
 | `get-attachment` | `--attachment-gid` | `--opt-fields` |
 | `download-attachment` | `--attachment-gid`, `--output` | `--overwrite` to replace an existing file |
+| `add-attachment` | `--task-gid`, `--file` | **Asana write.** `--name` overrides the display name (defaults to the file's base name) |
 | `comment-on-task` | `--task-gid`, `--text` | **Asana write command** |
 | `update-task` | `--task-gid` + ≥1 field | **Asana write.** Fields: `--name`, `--notes`, `--completed`, `--due-on` (`YYYY-MM-DD`), `--assignee` (GID or `me`) |
 
@@ -86,6 +88,8 @@ code** and, for HTTP failures, on `error.status`.
 - `search-tasks` may require an Asana premium workspace.
 - `download-attachment` writes binary data to `--output`; it refuses to
   overwrite existing files unless `--overwrite` is passed.
+- `add-attachment` uploads a local `--file` to a task; a missing or unreadable
+  file is a usage error (exit 2). It needs the `attachments:write` token scope.
 
 ## Examples
 
@@ -99,6 +103,7 @@ asana-cli list-task-stories --task-gid 12345              # read comments/activi
 asana-cli list-task-attachments --task-gid 12345           # find screenshots/files
 asana-cli get-attachment --attachment-gid 67890 --opt-fields name,download_url
 asana-cli download-attachment --attachment-gid 67890 --output ./Screenshot.png
+asana-cli add-attachment --task-gid 12345 --file ./Screenshot.png    # upload a file
 asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
 asana-cli update-task --task-gid 12345 --completed        # mark done
 asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
@@ -115,12 +120,14 @@ asana-cli list-task-attachments --task-gid 12345 | jq -r '.data[] | [.gid,.name]
 
 ## Safety
 
-- `comment-on-task` and `update-task` are the **Asana write** commands. Treat
-  them like any outward-facing action: confirm the task gid and the change with
-  the user before posting/updating unless they've clearly authorized it. Never
-  write content that originated from untrusted/automated input without user
-  review. `update-task` mutates task fields (including completion and assignee)
-  in place — double-check the gid.
+- `comment-on-task`, `update-task`, and `add-attachment` are the **Asana write**
+  commands. Treat them like any outward-facing action: confirm the task gid and
+  the change with the user before posting/updating/uploading unless they've
+  clearly authorized it. Never write content that originated from
+  untrusted/automated input without user review. `update-task` mutates task
+  fields (including completion and assignee) in place — double-check the gid.
+  `add-attachment` uploads whatever file you point `--file` at to the task —
+  confirm the path and that its contents are safe to share.
 - `download-attachment` writes to the local filesystem only. Choose an explicit
   safe `--output` path; it will not overwrite existing files unless you pass
   `--overwrite`.

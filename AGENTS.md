@@ -16,15 +16,15 @@ summaries.
 cmd/asana-cli/main.go          # entrypoint: cli.Execute() -> os.Exit
 config/                        # credential loading (env + ~/.config/asana-cli.yaml) + workspace resolution
   config.go                    #   Load() (file+env, env wins), LoadFrom(getenv) (env-only), ConfigPath, Config.ResolveWorkspace
-asana/                         # HTTP client (ported from src/asana-client.ts plus binary download helper)
-  client.go                    #   Client.Request, Client.Paginate, Client.Download, HTTPError, EncodePathSegment
+asana/                         # HTTP client (ported from src/asana-client.ts plus binary download/upload helpers)
+  client.go                    #   Client.Request, Client.Paginate, Client.Download, Client.Upload, HTTPError, EncodePathSegment
 cli/                           # Cobra command tree (one file per subcommand)
   root.go                      #   root cmd, persistent flags, exitCodeFor, usageError type
   run.go                       #   buildClient, withTimeout, validateLimit, requireFlag, query helpers, requestData
   output.go                    #   {ok,data} / {ok,error} envelopes, summarizers, humanList
   me.go list_workspaces.go list_projects.go search_tasks.go
   get_task.go list_task_stories.go comment_on_task.go update_task.go
-  list_task_attachments.go get_attachment.go download_attachment.go
+  list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go
 ```
 
 ## Conventions
@@ -57,6 +57,11 @@ cli/                           # Cobra command tree (one file per subcommand)
   metadata with `opt_fields=gid,name,download_url`, then streams `download_url`
   via `Client.Download`. Downloads write only to `--output`, refuse overwrite
   unless `--overwrite`, and remove partial output files on failure.
+  `add-attachment` uploads a local file via `Client.Upload` (multipart/form-data
+  `POST /attachments`): fields `parent`=`--task-gid` and `file` (streamed from
+  `--file`), with `--name` overriding the display/file name (defaults to the
+  file's base name). Missing flags and a nonexistent/unreadable `--file` are
+  usage errors (exit 2).
 
 ## Testing
 
@@ -85,3 +90,5 @@ that extension (and its tests) unless intentionally diverging.
 
 Known intentional divergences (this CLI has, the extension does not):
 - `update-task` (`PUT /tasks/{gid}`) — the extension exposes no task-update tool.
+- `add-attachment` (`POST /attachments`, multipart) — the extension exposes no
+  attachment-upload tool.
