@@ -1,0 +1,37 @@
+---
+title: asana-cli
+description: Drive Asana from the command line with a JSON-first CLI for agents and scripts.
+template: splash
+hero:
+  tagline: Deterministic Asana operations from the shell.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+    - text: Browse commands
+      link: /commands/
+      icon: open-book
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+`asana-cli` exposes Asana operations through a standalone Go CLI. It is designed
+for agents and scripts: JSON is the default, `--human` provides readable
+summaries, and exit codes distinguish runtime failures from usage errors.
+
+<CardGrid stagger>
+  <Card title="Configure once" icon="setting">
+    Load an Asana personal access token from environment variables or a private YAML config file.
+  </Card>
+  <Card title="Query work" icon="magnifier">
+    List workspaces and projects, search tasks, inspect stories, and manage attachments with bounded pagination.
+  </Card>
+  <Card title="Automate carefully" icon="rocket">
+    Post comments, update tasks, upload files, and download attachments with explicit write-command behavior.
+  </Card>
+</CardGrid>
+
+:::caution[Credentials required]
+Asana API operations require an access token. Keep it in the environment or a
+private `~/.config/asana-cli.yaml` file; never commit credentials.
+:::

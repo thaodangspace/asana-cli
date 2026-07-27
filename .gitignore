@@ -1,3 +1,6 @@
 /asana-cli
 /dist/
+docs/node_modules/
+docs/.astro/
+docs/dist/
 *.out

@@ -165,6 +165,12 @@ asana-cli update-task --task-gid 12345 --assignee me --notes "Reassigned."
 asana-cli update-task --task-gid 12345 --due-on ""   # clears the due date
 ```
 
+## Documentation
+
+The documentation site is an Astro/Starlight app under `docs/`. Run it locally
+with `make docs-dev`, or build the static site with `make docs-build`. Cloudflare
+Pages settings are documented in [`docs/README.md`](docs/README.md).
+
 ## Test
 
 ```bash

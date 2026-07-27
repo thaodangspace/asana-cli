@@ -25,6 +25,7 @@ cli/                           # Cobra command tree (one file per subcommand)
   me.go list_workspaces.go list_projects.go search_tasks.go
   get_task.go list_task_stories.go comment_on_task.go update_task.go
   list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go
+docs/                           # Astro/Starlight static documentation site
 ```
 
 ## Conventions
@@ -72,6 +73,9 @@ cli/                           # Cobra command tree (one file per subcommand)
   exit semantics with `exitCodeFor(err)`.
 - `ASANA_API_BASE` is the test-only base-URL seam (read in `buildClient`); it is
   intentionally undocumented for users.
+- The docs site uses npm from `docs/` and emits static output to `docs/dist/`:
+  `make docs-build`. Cloudflare Pages uses root `docs`, build command
+  `npm run build`, and output `dist`.
 - Tests assert the token never leaks into errors.
 
 ## How an agent invokes it
