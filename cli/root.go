@@ -74,6 +74,8 @@ func newRootCommand() *cobra.Command {
 		newMeCommand(),
 		newListWorkspacesCommand(),
 		newListProjectsCommand(),
+		newListProjectTasksCommand(),
+		newListTagTasksCommand(),
 		newSearchTasksCommand(),
 		newGetTaskCommand(),
 		newListTaskStoriesCommand(),

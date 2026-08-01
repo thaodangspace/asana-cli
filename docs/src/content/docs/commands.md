@@ -15,6 +15,8 @@ description: Query Asana resources, inspect attachments, and perform explicit wr
 asana-cli me [--opt-fields FIELDS]
 asana-cli list-workspaces [--limit N] [--opt-fields FIELDS]
 asana-cli list-projects --workspace-gid GID [--limit N] [--opt-fields FIELDS]
+asana-cli list-project-tasks --project-gid GID [--limit N] [--opt-fields FIELDS]
+asana-cli list-tag-tasks --tag-gid GID [--limit N] [--opt-fields FIELDS]
 asana-cli search-tasks --workspace-gid GID [options]
 asana-cli get-task --task-gid GID [--opt-fields FIELDS]
 asana-cli list-task-stories --task-gid GID [--limit N]
@@ -54,5 +56,6 @@ mutating commands and run them only when explicitly requested.
 
 ## Pagination
 
-List and search commands paginate internally with page size 50, a maximum of ten
-pages, and a user-facing `--limit` from 1 through 100 (default 20).
+List and search commands paginate internally with page size 50 and a maximum
+of ten pages. Most commands accept a `--limit` from 1 through 100 (default 20);
+`list-project-tasks` and `list-tag-tasks` default to 100 and allow up to 500.
