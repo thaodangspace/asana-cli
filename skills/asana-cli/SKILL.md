@@ -1,6 +1,6 @@
 ---
 name: asana-cli
-description: Use the asana-cli command-line tool to read/comment on Asana data and fetch or upload task attachments (workspaces, projects, tasks, stories/comments, screenshots/files). Use when the user wants to look up Asana tasks/projects, search Asana, read task comments, list/get/download/add attachments, or post a comment to a task from the shell.
+description: Use the asana-cli command-line tool to read/comment on Asana data and fetch or upload task attachments (workspaces, projects, tags, tasks, stories/comments, screenshots/files). Use when the user wants to look up Asana tasks/projects, search Asana, read task comments, list/get/download/add attachments, or post a comment to a task from the shell.
 allowed-tools:
   - Bash(asana-cli *)
 ---
@@ -61,6 +61,8 @@ code** and, for HTTP failures, on `error.status`.
 | `me` | — | |
 | `list-workspaces` | — | `--limit`, `--opt-fields` |
 | `list-projects` | `--workspace-gid` (or default) | `--limit`, `--opt-fields` |
+| `list-project-tasks` | `--project-gid` | `--limit` (1-500, default 100), `--opt-fields` |
+| `list-tag-tasks` | `--tag-gid` | `--limit` (1-500, default 100), `--opt-fields` |
 | `search-tasks` | workspace | `--text`, `--assignee`, `--completed=true/false`, `--limit`, `--opt-fields` (may require premium) |
 | `get-task` | `--task-gid` | `--opt-fields` |
 | `list-task-stories` | `--task-gid` | `--limit`, `--opt-fields` |
@@ -79,7 +81,10 @@ code** and, for HTTP failures, on `error.status`.
 
 ### Notes
 
-- `--limit` is bounded 1..100 (default 20). List/search paginate internally.
+- `--limit` is bounded 1..100 (default 20) except `list-project-tasks` and
+  `list-tag-tasks`, which are bounded 1..500 (default 100) since these task
+  lists can be large.
+  List/search paginate internally.
 - `--completed` is tri-state: omit it entirely unless you mean to filter
   (`--completed=true` or `--completed=false`). Same for `update-task`.
 - `update-task` sends only the field flags you set; passing an empty string to
@@ -97,6 +102,8 @@ code** and, for HTTP failures, on `error.status`.
 asana-cli me                                              # who am I / verify auth
 asana-cli list-workspaces --limit 50
 asana-cli list-projects --workspace-gid 12345
+asana-cli list-project-tasks --project-gid 12345 --opt-fields name,completed,assignee.name
+asana-cli list-tag-tasks --tag-gid 67890 --opt-fields name,completed
 asana-cli search-tasks --text "release" --completed=false
 asana-cli get-task --task-gid 12345
 asana-cli list-task-stories --task-gid 12345              # read comments/activity

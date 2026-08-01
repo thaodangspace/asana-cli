@@ -87,6 +87,8 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `me` | `GET /users/me` | |
 | `list-workspaces` | `GET /workspaces` | `--limit`, `--opt-fields` |
 | `list-projects` | `GET /workspaces/{ws}/projects` | `--workspace-gid`, `--limit`, `--opt-fields` |
+| `list-project-tasks` | `GET /projects/{project_gid}/tasks` | `--project-gid`, `--limit` (1-500), `--opt-fields` |
+| `list-tag-tasks` | `GET /tags/{tag_gid}/tasks` | `--tag-gid`, `--limit` (1-500), `--opt-fields` |
 | `search-tasks` | `GET /workspaces/{ws}/tasks/search` | `--text`, `--assignee`, `--completed`, `--limit`, `--opt-fields` (may require premium) |
 | `get-task` | `GET /tasks/{gid}` | `--task-gid` (required), `--opt-fields` |
 | `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), `--limit`, `--opt-fields` |
@@ -97,8 +99,9 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 of `--name`, `--notes`, `--completed`, `--due-on`, `--assignee`. Write command. |
 
-`--limit` is bounded to 1..100 (default 20). List/search commands paginate
-internally (page size 50, up to 10 pages, capped at `--limit`).
+`--limit` is bounded to 1..100 (default 20), except `list-project-tasks` and
+`list-tag-tasks`, which default to 100 and allow up to 500. List/search commands
+paginate internally (page size 50, up to 10 pages, capped at `--limit`).
 
 `--completed` is tri-state: omitted entirely unless you pass it
 (`--completed=true` or `--completed=false`).
@@ -150,6 +153,8 @@ print as a plain message line instead.
 asana-cli me
 asana-cli list-workspaces --limit 50
 asana-cli list-projects --workspace-gid 12345
+asana-cli list-project-tasks --project-gid 12345
+asana-cli list-tag-tasks --tag-gid 67890
 asana-cli search-tasks --text "release" --completed=false
 asana-cli get-task --task-gid 12345 --human
 asana-cli list-task-stories --task-gid 12345
