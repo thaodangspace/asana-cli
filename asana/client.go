@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -96,7 +97,7 @@ func EncodePathSegment(value string) string {
 // buildURL resolves a path or absolute URL against the base, mirroring the
 // extension's buildUrl behavior.
 func (c *Client) buildURL(pathOrURL string) string {
-	if strings.HasPrefix(pathOrURL, "https://") || strings.HasPrefix(pathOrURL, "http://") {
+	if u, err := url.Parse(pathOrURL); err == nil && u.IsAbs() && u.Host != "" {
 		return pathOrURL
 	}
 	if strings.HasPrefix(pathOrURL, "/") {
@@ -105,15 +106,113 @@ func (c *Client) buildURL(pathOrURL string) string {
 	return c.baseURL + "/" + pathOrURL
 }
 
+// urlOrigin is the part of a URL that determines whether credentials may be
+// sent. URL paths, queries, and fragments are deliberately excluded.
+type urlOrigin struct {
+	scheme   string
+	hostname string
+	port     string
+}
+
+func originOf(u *url.URL) urlOrigin {
+	scheme := strings.ToLower(u.Scheme)
+	port := u.Port()
+	if port != "" {
+		if number, err := strconv.Atoi(port); err == nil {
+			port = strconv.Itoa(number)
+		}
+	} else {
+		switch scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		}
+	}
+	return urlOrigin{
+		scheme:   scheme,
+		hostname: strings.ToLower(u.Hostname()),
+		port:     port,
+	}
+}
+
+func sameOrigin(a, b *url.URL) bool {
+	if a == nil || b == nil || a.Host == "" || b.Host == "" {
+		return false
+	}
+	return originOf(a) == originOf(b)
+}
+
+// shouldAuthenticate reports whether targetURL is trusted to receive the
+// Asana bearer token. Relative API paths are trusted by definition; absolute
+// URLs must have the same normalized origin as the configured API base URL.
+func (c *Client) shouldAuthenticate(targetURL string) bool {
+	target, err := url.Parse(targetURL)
+	if err != nil {
+		return false
+	}
+	if !target.IsAbs() {
+		return true
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return false
+	}
+	return sameOrigin(base, target)
+}
+
+func isHTTPS(u *url.URL) bool {
+	return u != nil && strings.EqualFold(u.Scheme, "https")
+}
+
+// displayPath strips query strings and fragments before a URL is logged or
+// included in an error. Attachment URLs commonly contain signed credentials.
 func displayPath(pathOrURL string) string {
 	u, err := url.Parse(pathOrURL)
-	if err == nil && u.IsAbs() {
-		if u.Path == "" {
+	if err == nil {
+		path := u.EscapedPath()
+		if path == "" {
 			return "/"
 		}
-		return u.Path
+		return path
 	}
 	return pathOrURL
+}
+
+func safeURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return displayPath(raw)
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.User = nil
+	if u.IsAbs() {
+		return u.String()
+	}
+	return displayPath(raw)
+}
+
+func redactSecret(value, secret string) string {
+	if secret != "" {
+		return strings.ReplaceAll(value, secret, "[REDACTED]")
+	}
+	return value
+}
+
+type redactedError struct {
+	err     error
+	message string
+}
+
+func (e *redactedError) Error() string { return e.message }
+func (e *redactedError) Unwrap() error { return e.err }
+
+func redactError(err error, secret string) error {
+	if err == nil || secret == "" || !strings.Contains(err.Error(), secret) {
+		return err
+	}
+	return &redactedError{err: err, message: redactSecret(err.Error(), secret)}
 }
 
 func excerpt(body []byte) string {
@@ -149,7 +248,7 @@ func (c *Client) Request(ctx context.Context, method, pathOrURL string, body any
 	}
 
 	if c.verbose && c.logw != nil {
-		fmt.Fprintf(c.logw, "%s %s\n", method, pathOrURL)
+		fmt.Fprintf(c.logw, "%s %s\n", method, redactSecret(displayPath(pathOrURL), c.token))
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -166,37 +265,73 @@ func (c *Client) Request(ctx context.Context, method, pathOrURL string, body any
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &HTTPError{
 			Method:          method,
-			URL:             fullURL,
-			Path:            pathOrURL,
+			URL:             redactSecret(safeURL(fullURL), c.token),
+			Path:            redactSecret(displayPath(pathOrURL), c.token),
 			Status:          resp.StatusCode,
 			StatusText:      http.StatusText(resp.StatusCode),
-			ResponseExcerpt: excerpt(payload),
+			ResponseExcerpt: redactSecret(excerpt(payload), c.token),
 		}
 	}
 
 	return json.RawMessage(payload), nil
 }
 
-// Download performs an authenticated GET and streams the response body to w.
-// It is intended for attachment download_url values and does not JSON-decode
+// Download performs a GET and streams the response body to w. It authenticates
+// only relative paths and absolute URLs sharing the configured API origin. It
+// is intended for attachment download_url values and does not JSON-decode
 // successful responses.
 func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (int64, error) {
 	fullURL := c.buildURL(pathOrURL)
+	target, err := url.Parse(fullURL)
+	if err != nil {
+		return 0, redactError(err, c.token)
+	}
+	if !c.shouldAuthenticate(pathOrURL) && !isHTTPS(target) {
+		return 0, fmt.Errorf("refusing download from an external non-HTTPS URL")
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
-		return 0, err
+		return 0, redactError(err, c.token)
 	}
 	req.Header.Set("Accept", "application/octet-stream")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.shouldAuthenticate(pathOrURL) {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 
 	safePath := displayPath(pathOrURL)
 	if c.verbose && c.logw != nil {
-		fmt.Fprintf(c.logw, "%s %s\n", http.MethodGet, safePath)
+		fmt.Fprintf(c.logw, "%s %s\n", http.MethodGet, redactSecret(safePath, c.token))
 	}
 
-	resp, err := c.httpClient.Do(req)
+	// net/http normally strips Authorization on cross-origin redirects. Wrap
+	// the client's redirect policy as defense in depth, including for clients
+	// with a custom CheckRedirect callback.
+	httpClient := *c.httpClient
+	previousRedirect := httpClient.CheckRedirect
+	httpClient.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
+		trusted := c.shouldAuthenticate(redirectReq.URL.String())
+		if !trusted && !isHTTPS(redirectReq.URL) {
+			return fmt.Errorf("refusing redirect to an external non-HTTPS URL")
+		}
+		if !trusted {
+			redirectReq.Header.Del("Authorization")
+		}
+		var redirectErr error
+		if previousRedirect != nil {
+			redirectErr = previousRedirect(redirectReq, via)
+		}
+		// A caller-supplied callback must not be able to accidentally restore
+		// credentials on an untrusted redirect.
+		if !trusted {
+			redirectReq.Header.Del("Authorization")
+		}
+		return redirectErr
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, redactError(err, c.token)
 	}
 	defer resp.Body.Close()
 
@@ -207,11 +342,11 @@ func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (i
 		}
 		return 0, &HTTPError{
 			Method:          http.MethodGet,
-			URL:             fullURL,
-			Path:            safePath,
+			URL:             redactSecret(safeURL(fullURL), c.token),
+			Path:            redactSecret(safePath, c.token),
 			Status:          resp.StatusCode,
 			StatusText:      http.StatusText(resp.StatusCode),
-			ResponseExcerpt: excerpt(payload),
+			ResponseExcerpt: redactSecret(excerpt(payload), c.token),
 		}
 	}
 
@@ -253,7 +388,7 @@ func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
 	if c.verbose && c.logw != nil {
-		fmt.Fprintf(c.logw, "%s %s\n", http.MethodPost, displayPath(pathOrURL))
+		fmt.Fprintf(c.logw, "%s %s\n", http.MethodPost, redactSecret(displayPath(pathOrURL), c.token))
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -270,11 +405,11 @@ func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &HTTPError{
 			Method:          http.MethodPost,
-			URL:             fullURL,
-			Path:            pathOrURL,
+			URL:             redactSecret(safeURL(fullURL), c.token),
+			Path:            redactSecret(displayPath(pathOrURL), c.token),
 			Status:          resp.StatusCode,
 			StatusText:      http.StatusText(resp.StatusCode),
-			ResponseExcerpt: excerpt(payload),
+			ResponseExcerpt: redactSecret(excerpt(payload), c.token),
 		}
 	}
 
