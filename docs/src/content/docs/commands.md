@@ -13,13 +13,13 @@ description: Query Asana resources, inspect attachments, and perform explicit wr
 
 ```sh
 asana-cli me [--opt-fields FIELDS]
-asana-cli list-workspaces [--limit N] [--opt-fields FIELDS]
-asana-cli list-projects --workspace-gid GID [--limit N] [--opt-fields FIELDS]
-asana-cli list-project-tasks --project-gid GID [--limit N] [--opt-fields FIELDS]
-asana-cli list-tag-tasks --tag-gid GID [--limit N] [--opt-fields FIELDS]
-asana-cli search-tasks --workspace-gid GID [options]
+asana-cli list-workspaces [pagination options] [--opt-fields FIELDS]
+asana-cli list-projects --workspace-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli list-project-tasks --project-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli list-tag-tasks --tag-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli search-tasks --workspace-gid GID [search and pagination options]
 asana-cli get-task --task-gid GID [--opt-fields FIELDS]
-asana-cli list-task-stories --task-gid GID [--limit N]
+asana-cli list-task-stories --task-gid GID [pagination options]
 ```
 
 `search-tasks` accepts `--text`, `--assignee`, `--completed`, `--limit`, and
@@ -30,7 +30,7 @@ premium Asana workspace.
 ## Attachment commands
 
 ```sh
-asana-cli list-task-attachments --task-gid GID [--limit N]
+asana-cli list-task-attachments --task-gid GID [pagination options]
 asana-cli get-attachment --attachment-gid GID [--opt-fields FIELDS]
 asana-cli download-attachment --attachment-gid GID --output PATH [--overwrite]
 asana-cli add-attachment --task-gid GID --file PATH [--name NAME]
@@ -56,6 +56,15 @@ mutating commands and run them only when explicitly requested.
 
 ## Pagination
 
-List and search commands paginate internally with page size 50 and a maximum
-of ten pages. Most commands accept a `--limit` from 1 through 100 (default 20);
-`list-project-tasks` and `list-tag-tasks` default to 100 and allow up to 500.
+Every list/search command accepts:
+
+- `--limit N` — maximum items (default 20, or 100 for project/tag tasks).
+- `--all` — follow pages until `next_page` is absent. This cannot be combined
+  with an explicitly supplied `--limit`.
+- `--offset TOKEN` — start at an Asana pagination offset.
+- `--max-pages N` — positive safety bound; the default is 10. `--all` is
+  unlimited unless `--max-pages` is explicitly supplied.
+
+Requests use a page size of 50. JSON responses include `pagination` metadata;
+when traversal stops with another page available, `truncated` is true and the
+next offset/path is included. Human output says when results are truncated.

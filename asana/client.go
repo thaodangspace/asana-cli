@@ -416,6 +416,17 @@ func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string
 	return json.RawMessage(payload), nil
 }
 
+// PageResult contains collection items and enough state to inspect or resume
+// pagination. NextPath and NextOffset describe the next page advertised by
+// Asana when traversal stopped before the collection was exhausted.
+type PageResult struct {
+	Items        []json.RawMessage
+	PagesFetched int
+	NextOffset   string
+	NextPath     string
+	Truncated    bool
+}
+
 // page is the envelope returned by Asana collection endpoints.
 type page struct {
 	Data     []json.RawMessage `json:"data"`
@@ -426,37 +437,89 @@ type page struct {
 	} `json:"next_page"`
 }
 
-// Paginate follows next_page links, accumulating up to limit elements across at
-// most maxPages requests. Mirrors the extension's paginate semantics.
-func (c *Client) Paginate(ctx context.Context, pathOrURL string, limit, maxPages int) ([]json.RawMessage, error) {
-	var values []json.RawMessage
-	next := pathOrURL
-	pages := 0
+// withOffset adds or replaces an offset query parameter without discarding
+// query parameters already present on a page URL.
+func withOffset(pathOrURL, offset string) string {
+	if offset == "" {
+		return pathOrURL
+	}
+	u, err := url.Parse(pathOrURL)
+	if err != nil {
+		return pathOrURL
+	}
+	q := u.Query()
+	q.Set("offset", offset)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
 
-	for next != "" && len(values) < limit && pages < maxPages {
+func nextPage(current string, p *struct {
+	Offset string `json:"offset"`
+	Path   string `json:"path"`
+	URI    string `json:"uri"`
+}) (path, offset string) {
+	if p == nil {
+		return "", ""
+	}
+	offset = p.Offset
+	switch {
+	case p.URI != "":
+		path = p.URI
+	case p.Path != "":
+		path = p.Path
+	case offset != "":
+		path = withOffset(current, offset)
+	}
+	return path, offset
+}
+
+// Paginate follows next_page links. A non-positive limit means unlimited
+// items, and a non-positive maxPages means unlimited pages. The result marks
+// intentional or safety-bound partial results as truncated and exposes a
+// resumable next path/offset when Asana supplied one.
+func (c *Client) Paginate(ctx context.Context, pathOrURL string, limit, maxPages int) (PageResult, error) {
+	result := PageResult{Items: make([]json.RawMessage, 0)}
+	next := pathOrURL
+
+	for next != "" && (limit <= 0 || len(result.Items) < limit) && (maxPages <= 0 || result.PagesFetched < maxPages) {
 		raw, err := c.Request(ctx, http.MethodGet, next, nil)
 		if err != nil {
-			return nil, err
+			return PageResult{}, err
 		}
 		var p page
 		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, fmt.Errorf("decode page: %w", err)
+			return PageResult{}, fmt.Errorf("decode page: %w", err)
 		}
-		values = append(values, p.Data...)
 
-		next = ""
-		if p.NextPage != nil {
-			if p.NextPage.URI != "" {
-				next = p.NextPage.URI
-			} else {
-				next = p.NextPage.Path
+		result.Items = append(result.Items, p.Data...)
+		result.PagesFetched++
+		next, result.NextOffset = nextPage(next, p.NextPage)
+		hasNext := next != ""
+
+		if limit > 0 && len(result.Items) >= limit {
+			if len(result.Items) > limit || hasNext {
+				result.Truncated = true
 			}
+			result.Items = result.Items[:limit]
+			if !hasNext {
+				result.NextOffset = ""
+			}
+			break
 		}
-		pages++
+		if maxPages > 0 && result.PagesFetched >= maxPages && hasNext {
+			result.Truncated = true
+			break
+		}
+		if !hasNext {
+			break
+		}
 	}
 
-	if len(values) > limit {
-		values = values[:limit]
+	if !result.Truncated {
+		result.NextOffset = ""
+		result.NextPath = ""
+	} else {
+		result.NextPath = next
 	}
-	return values, nil
+	return result, nil
 }

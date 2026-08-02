@@ -11,15 +11,16 @@ import (
 
 func newListTaskStoriesCommand() *cobra.Command {
 	var (
-		taskGID   string
-		limit     int
-		optFields string
+		taskGID    string
+		pagination paginationOptions
+		optFields  string
 	)
 	cmd := &cobra.Command{
 		Use:   "list-task-stories",
 		Short: "List stories and comments on an Asana task",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateLimit(limit); err != nil {
+			limit, err := pagination.validate(cmd, 100)
+			if err != nil {
 				return err
 			}
 			gid, err := requireFlag("task-gid", taskGID)
@@ -35,18 +36,21 @@ func newListTaskStoriesCommand() *cobra.Command {
 
 			q := url.Values{}
 			q.Set("limit", strconv.Itoa(pageSize))
+			if pagination.offset != "" {
+				q.Set("offset", pagination.offset)
+			}
 			appendOptFields(q, optFields)
 			path := "/tasks/" + asana.EncodePathSegment(gid) + "/stories" + querySuffix(q)
-			items, err := c.Paginate(ctx, path, limit, maxPages)
+			result, err := c.Paginate(ctx, path, limit, paginationPageLimit(cmd, &pagination))
 			if err != nil {
 				return err
 			}
-			human := humanList(items, summarizeStory, "No stories found.")
-			return writeSuccess(cmd.OutOrStdout(), items, opts.human, human)
+			human := humanList(result.Items, summarizeStory, "No stories found.")
+			return writeSuccessWithPagination(cmd.OutOrStdout(), result.Items, pageMetadata(result), opts.human, human)
 		},
 	}
 	cmd.Flags().StringVar(&taskGID, "task-gid", "", "Asana task GID (required)")
-	cmd.Flags().IntVar(&limit, "limit", 20, "maximum items to return (1-100)")
+	pagination.addFlags(cmd, 20)
 	cmd.Flags().StringVar(&optFields, "opt-fields", "", "comma-separated Asana opt_fields")
 	return cmd
 }

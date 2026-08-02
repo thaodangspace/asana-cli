@@ -10,13 +10,24 @@ JSON is the default output. Successful commands emit an envelope:
 ```json
 {
   "ok": true,
-  "data": {}
+  "data": [],
+  "pagination": {
+    "pages_fetched": 2,
+    "truncated": true,
+    "next_offset": "offset-token",
+    "next_path": "/workspaces/123/projects?offset=offset-token"
+  }
 }
 ```
 
-The `data` value is the unwrapped Asana object or array. Downloads return a
-small result object containing the attachment ID, name, output path, and bytes
-written.
+List and search commands include pagination metadata. `--all` follows every
+page; `--offset` resumes a collection; and `--max-pages` can mark a bounded
+result as truncated. Single-resource commands omit `pagination`. `data` remains
+the unwrapped Asana object or array.
+
+Downloads return a small result object containing the attachment ID, name,
+output path, and bytes written. When `truncated` is true, use the returned
+`next_offset` or `next_path` to resume when present.
 
 Errors are written to stderr as an envelope:
 

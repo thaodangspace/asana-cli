@@ -15,12 +15,48 @@ import (
 	"github.com/dtonair/asana-cli/config"
 )
 
-// pageSize is the per-request page size used for paginated endpoints, matching
-// the extension's behavior.
+// pageSize is the per-request page size used for paginated endpoints.
 const pageSize = 50
 
-// maxPages bounds pagination, matching the extension.
+// maxPages is the default safety bound for the existing bounded behavior.
 const maxPages = 10
+
+type paginationOptions struct {
+	limit    int
+	all      bool
+	offset   string
+	maxPages int
+}
+
+func (p *paginationOptions) addFlags(cmd *cobra.Command, defaultLimit int) {
+	cmd.Flags().IntVar(&p.limit, "limit", defaultLimit, "maximum items to return")
+	cmd.Flags().BoolVar(&p.all, "all", false, "return all items (cannot be combined with an explicit --limit)")
+	cmd.Flags().StringVar(&p.offset, "offset", "", "start from an Asana pagination offset")
+	cmd.Flags().IntVar(&p.maxPages, "max-pages", maxPages, "maximum pages to fetch (1 or more; --all is unlimited unless set)")
+}
+
+func (p *paginationOptions) validate(cmd *cobra.Command, maximum int) (int, error) {
+	if p.all && cmd.Flags().Changed("limit") {
+		return 0, usageErrorf("--all cannot be combined with --limit")
+	}
+	if p.maxPages < 1 {
+		return 0, usageErrorf("--max-pages must be at least 1, got %d", p.maxPages)
+	}
+	if p.all {
+		return 0, nil
+	}
+	if p.limit < 1 || p.limit > maximum {
+		return 0, usageErrorf("--limit must be between 1 and %d, got %d", maximum, p.limit)
+	}
+	return p.limit, nil
+}
+
+func paginationPageLimit(cmd *cobra.Command, p *paginationOptions) int {
+	if p.all && !cmd.Flags().Changed("max-pages") {
+		return 0
+	}
+	return p.maxPages
+}
 
 // buildClient loads config and constructs an Asana client honoring the
 // persistent flags. Config failures are usage errors (exit code 2).
@@ -47,14 +83,6 @@ func buildClient() (*asana.Client, config.Config, error) {
 // withTimeout derives a context bounded by the --timeout flag.
 func withTimeout(cmd *cobra.Command) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(cmd.Context(), opts.timeout)
-}
-
-// validateLimit enforces the 1..100 bound (usage error on violation).
-func validateLimit(limit int) error {
-	if limit < 1 || limit > 100 {
-		return usageErrorf("--limit must be between 1 and 100, got %d", limit)
-	}
-	return nil
 }
 
 // requireFlag returns a trimmed required string value or a usage error.

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -62,6 +63,69 @@ func TestListProjectTasksPaginatesPastHundred(t *testing.T) {
 	decodeData(t, out, &tasks)
 	if len(tasks) != 3 {
 		t.Errorf("got %d tasks, want 3", len(tasks))
+	}
+}
+
+func TestListProjectTasksAllAndOffset(t *testing.T) {
+	var queries []string
+	out, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		if len(queries) == 1 {
+			w.Write([]byte(`{"data":[{"gid":"1"}],"next_page":{"offset":"resume me"}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[{"gid":"2"}],"next_page":null}`))
+	}, "list-project-tasks", "--project-gid", "p1", "--all", "--offset", "start here")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(queries) != 2 || !strings.Contains(queries[0], "offset=start+here") {
+		t.Errorf("queries = %v, want encoded initial offset", queries)
+	}
+	var env struct {
+		Data       []json.RawMessage `json:"data"`
+		Pagination struct {
+			PagesFetched int  `json:"pages_fetched"`
+			Truncated    bool `json:"truncated"`
+		} `json:"pagination"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if len(env.Data) != 2 || env.Pagination.PagesFetched != 2 || env.Pagination.Truncated {
+		t.Errorf("result = %+v, want two complete items", env)
+	}
+}
+
+func TestListProjectTasksAllWithLimitIsUsageError(t *testing.T) {
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("request should not be made for conflicting pagination flags")
+	}, "list-project-tasks", "--project-gid", "p1", "--all", "--limit", "10")
+	if err == nil || exitCodeFor(err) != exitUsage {
+		t.Errorf("error = %v, exit = %d; want usage error", err, exitCodeFor(err))
+	}
+}
+
+func TestListProjectTasksMaxPagesMarksTruncated(t *testing.T) {
+	out, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"gid":"1"}],"next_page":{"path":"/projects/p1/tasks?page=2"}}`))
+	}, "list-project-tasks", "--project-gid", "p1", "--all", "--max-pages", "1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var env struct {
+		Pagination struct {
+			Truncated bool   `json:"truncated"`
+			NextPath  string `json:"next_path"`
+		} `json:"pagination"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if !env.Pagination.Truncated || env.Pagination.NextPath != "/projects/p1/tasks?page=2" {
+		t.Errorf("pagination = %+v, want resumable truncation", env.Pagination)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -128,8 +130,11 @@ func TestPaginateFollowsNextPageAndCaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != 3 {
-		t.Fatalf("len = %d, want 3 (limit cap)", len(got))
+	if len(got.Items) != 3 {
+		t.Fatalf("len = %d, want 3 (limit cap)", len(got.Items))
+	}
+	if !got.Truncated || got.NextPath != "" {
+		t.Errorf("pagination = %+v, want truncated without a resumable next page", got)
 	}
 	if hits != 2 {
 		t.Errorf("hits = %d, want 2", hits)
@@ -146,8 +151,54 @@ func TestPaginateMaxPages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != 3 {
-		t.Errorf("len = %d, want 3 (maxPages)", len(got))
+	if len(got.Items) != 3 {
+		t.Errorf("len = %d, want 3 (maxPages)", len(got.Items))
+	}
+	if !got.Truncated || got.NextPath != "/loop" {
+		t.Errorf("pagination = %+v, want truncated with /loop", got)
+	}
+}
+
+func TestPaginateFollowsMoreThanTenPagesWhenUnlimited(t *testing.T) {
+	hits := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		if hits < 12 {
+			w.Write([]byte(`{"data":[{"gid":"x"}],"next_page":{"offset":"next-` + strconv.Itoa(hits) + `"}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[{"gid":"last"}],"next_page":null}`))
+	})
+
+	got, err := c.Paginate(context.Background(), "/items?limit=50&filter=x", 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hits != 12 || got.PagesFetched != 12 || len(got.Items) != 12 || got.Truncated {
+		t.Errorf("hits=%d result=%+v, want 12 complete pages", hits, got)
+	}
+}
+
+func TestPaginateOffsetOnlyPreservesQuery(t *testing.T) {
+	var gotQuery string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"gid":"1"}],"next_page":{"offset":"a token"}}`))
+	})
+
+	got, err := c.Paginate(context.Background(), "/items?limit=50&filter=x", 0, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	initial, initialErr := url.ParseQuery(gotQuery)
+	if initialErr != nil || initial.Get("filter") != "x" || initial.Get("limit") != "50" {
+		t.Errorf("initial query = %q", gotQuery)
+	}
+	u, parseErr := url.Parse(got.NextPath)
+	if !got.Truncated || got.NextOffset != "a token" || parseErr != nil || u.Query().Get("filter") != "x" || u.Query().Get("limit") != "50" || u.Query().Get("offset") != "a token" {
+		t.Errorf("pagination = %+v, want preserved query and offset", got)
 	}
 }
 

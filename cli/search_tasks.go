@@ -16,14 +16,15 @@ func newSearchTasksCommand() *cobra.Command {
 		text         string
 		assignee     string
 		completed    bool
-		limit        int
+		pagination   paginationOptions
 		optFields    string
 	)
 	cmd := &cobra.Command{
 		Use:   "search-tasks",
 		Short: "Search tasks in an Asana workspace (may require premium access)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateLimit(limit); err != nil {
+			limit, err := pagination.validate(cmd, 100)
+			if err != nil {
 				return err
 			}
 			c, cfg, err := buildClient()
@@ -39,6 +40,9 @@ func newSearchTasksCommand() *cobra.Command {
 
 			q := url.Values{}
 			q.Set("limit", strconv.Itoa(pageSize))
+			if pagination.offset != "" {
+				q.Set("offset", pagination.offset)
+			}
 			if v := strings.TrimSpace(text); v != "" {
 				q.Set("text", v)
 			}
@@ -53,19 +57,19 @@ func newSearchTasksCommand() *cobra.Command {
 			appendOptFields(q, optFields)
 
 			path := "/workspaces/" + asana.EncodePathSegment(workspace) + "/tasks/search?" + q.Encode()
-			items, err := c.Paginate(ctx, path, limit, maxPages)
+			result, err := c.Paginate(ctx, path, limit, paginationPageLimit(cmd, &pagination))
 			if err != nil {
 				return err
 			}
-			human := humanList(items, summarizeTask, "No tasks found.")
-			return writeSuccess(cmd.OutOrStdout(), items, opts.human, human)
+			human := humanList(result.Items, summarizeTask, "No tasks found.")
+			return writeSuccessWithPagination(cmd.OutOrStdout(), result.Items, pageMetadata(result), opts.human, human)
 		},
 	}
 	cmd.Flags().StringVar(&workspaceGID, "workspace-gid", "", "Asana workspace GID (defaults to ASANA_DEFAULT_WORKSPACE)")
 	cmd.Flags().StringVar(&text, "text", "", "text search query")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee GID, email, or me")
 	cmd.Flags().BoolVar(&completed, "completed", false, "filter by completion state (omitted unless set)")
-	cmd.Flags().IntVar(&limit, "limit", 20, "maximum items to return (1-100)")
+	pagination.addFlags(cmd, 20)
 	cmd.Flags().StringVar(&optFields, "opt-fields", "", "comma-separated Asana opt_fields")
 	return cmd
 }
