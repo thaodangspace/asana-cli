@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dtonair/asana-cli/asana"
+	"github.com/thaodangspace/asana-cli/asana"
 )
 
 func TestWriteSuccessJSON(t *testing.T) {

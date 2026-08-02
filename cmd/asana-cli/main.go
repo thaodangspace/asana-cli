@@ -5,7 +5,7 @@ package main
 import (
 	"os"
 
-	"github.com/dtonair/asana-cli/cli"
+	"github.com/thaodangspace/asana-cli/cli"
 )
 
 func main() {

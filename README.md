@@ -10,7 +10,7 @@ summaries.
 ### Homebrew (recommended)
 
 ```bash
-brew tap dtonair/tap
+brew tap thaodangspace/tap
 brew install asana-cli
 ```
 
@@ -19,7 +19,7 @@ To upgrade later: `brew upgrade asana-cli`.
 ### go install
 
 ```bash
-go install github.com/dtonair/asana-cli/cmd/asana-cli@latest
+go install github.com/thaodangspace/asana-cli/cmd/asana-cli@latest
 ```
 
 This installs the `asana-cli` binary into `$(go env GOBIN)` (or `$(go env

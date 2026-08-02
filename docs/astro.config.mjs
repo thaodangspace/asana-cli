@@ -17,7 +17,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/dtonair/asana-cli',
+          href: 'https://github.com/thaodangspace/asana-cli',
         },
       ],
       sidebar: [

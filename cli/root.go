@@ -47,7 +47,7 @@ var opts globalOptions
 var errNotImplemented = errors.New("not implemented")
 
 // version is the CLI version, overridden at build time via -ldflags
-// "-X github.com/dtonair/asana-cli/cli.version=<value>" (see .goreleaser.yaml).
+// "-X github.com/thaodangspace/asana-cli/cli.version=<value>" (see .goreleaser.yaml).
 var version = "dev"
 
 func newRootCommand() *cobra.Command {

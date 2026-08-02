@@ -14,14 +14,14 @@ description: Install asana-cli, configure credentials, and make a safe first req
 The recommended Homebrew installation is:
 
 ```sh
-brew tap dtonair/tap
+brew tap thaodangspace/tap
 brew install asana-cli
 ```
 
 Or install the latest release with Go:
 
 ```sh
-go install github.com/dtonair/asana-cli/cmd/asana-cli@latest
+go install github.com/thaodangspace/asana-cli/cmd/asana-cli@latest
 ```
 
 Verify the command:

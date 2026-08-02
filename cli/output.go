@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dtonair/asana-cli/asana"
+	"github.com/thaodangspace/asana-cli/asana"
 )
 
 // paginationMetadata is included for list/search commands so callers can

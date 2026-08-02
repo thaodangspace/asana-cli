@@ -2,7 +2,7 @@ BINARY ?= asana-cli
 MAIN ?= ./cmd/asana-cli
 PKGS ?= ./...
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS ?= -s -w -X github.com/dtonair/asana-cli/cli.version=$(VERSION)
+LDFLAGS ?= -s -w -X github.com/thaodangspace/asana-cli/cli.version=$(VERSION)
 
 .DEFAULT_GOAL := help
 

@@ -15,7 +15,7 @@ pipe into `jq`.
 ## Before you start
 
 1. **Check it's installed:** `asana-cli --version`. If missing, install with
-   `brew install dtonair/tap/asana-cli` or `go install github.com/dtonair/asana-cli/cmd/asana-cli@latest`.
+   `brew install thaodangspace/tap/asana-cli` or `go install github.com/thaodangspace/asana-cli/cmd/asana-cli@latest`.
 2. **Check credentials:** the CLI needs `ASANA_ACCESS_TOKEN` (env) or
    `~/.config/asana-cli.yaml` with `access_token:`. Confirm access with
    `asana-cli me` — on success it returns the authenticated user. If it exits

@@ -1,7 +1,7 @@
 # asana-cli documentation
 
 This is the [Starlight](https://starlight.astro.build/) documentation site for
-[`asana-cli`](https://github.com/dtonair/asana-cli).
+[`asana-cli`](https://github.com/thaodangspace/asana-cli).
 
 ## Local development
 
