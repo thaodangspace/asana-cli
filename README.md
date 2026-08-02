@@ -85,26 +85,29 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | Command | Asana endpoint | Notes |
 |---------|----------------|-------|
 | `me` | `GET /users/me` | |
-| `list-workspaces` | `GET /workspaces` | `--limit`, `--opt-fields` |
-| `list-projects` | `GET /workspaces/{ws}/projects` | `--workspace-gid`, `--limit`, `--opt-fields` |
-| `list-project-tasks` | `GET /projects/{project_gid}/tasks` | `--project-gid`, `--limit` (1-500), `--opt-fields` |
-| `list-tag-tasks` | `GET /tags/{tag_gid}/tasks` | `--tag-gid`, `--limit` (1-500), `--opt-fields` |
-| `search-tasks` | `GET /workspaces/{ws}/tasks/search` | `--text`, `--assignee`, `--completed`, `--limit`, `--opt-fields` (may require premium) |
+| `list-workspaces` | `GET /workspaces` | `--limit`, `--all`, `--offset`, `--max-pages`, `--opt-fields` |
+| `list-projects` | `GET /workspaces/{ws}/projects` | `--workspace-gid`, pagination flags, `--opt-fields` |
+| `list-project-tasks` | `GET /projects/{project_gid}/tasks` | `--project-gid`, pagination flags, `--opt-fields` |
+| `list-tag-tasks` | `GET /tags/{tag_gid}/tasks` | `--tag-gid`, pagination flags, `--opt-fields` |
+| `search-tasks` | `GET /workspaces/{ws}/tasks/search` | search filters, pagination flags, `--opt-fields` (may require premium) |
 | `get-task` | `GET /tasks/{gid}` | `--task-gid` (required), `--opt-fields` |
-| `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), `--limit`, `--opt-fields` |
-| `list-task-attachments` | `GET /attachments?parent={task_gid}` | `--task-gid` (required), `--limit`, `--opt-fields` |
+| `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), pagination flags, `--opt-fields` |
+| `list-task-attachments` | `GET /attachments?parent={task_gid}` | `--task-gid` (required), pagination flags, `--opt-fields` |
 | `get-attachment` | `GET /attachments/{gid}` | `--attachment-gid` (required), `--opt-fields` |
 | `download-attachment` | `GET /attachments/{gid}` then attachment `download_url` | `--attachment-gid`, `--output` (both required), `--overwrite` |
 | `add-attachment` | `POST /attachments` (multipart) | `--task-gid`, `--file` (both required), `--name`. Write command. |
 | `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 of `--name`, `--notes`, `--completed`, `--due-on`, `--assignee`. Write command. |
 
-`--limit` is bounded to 1..100 (default 20), except `list-project-tasks` and
-`list-tag-tasks`, which default to 100 and allow up to 500. List/search commands
-paginate internally (page size 50, up to 10 pages, capped at `--limit`).
+All list/search commands support `--limit` (the maximum number of items),
+`--all`, `--offset`, and `--max-pages`. `--all` follows pages until Asana
+reports the collection is exhausted; it cannot be combined with an explicitly
+provided `--limit`. By default, existing limits and the ten-page safety bound
+are retained. `--all --max-pages N` provides a bounded full traversal.
+`--offset` resumes from an Asana offset token. `--max-pages` must be positive.
 
-`--completed` is tri-state: omitted entirely unless you pass it
-(`--completed=true` or `--completed=false`).
+Requests use a page size of 50. `--completed` is tri-state: omitted entirely
+unless you pass it (`--completed=true` or `--completed=false`).
 
 ## Output contract
 
@@ -113,14 +116,22 @@ paginate internally (page size 50, up to 10 pages, capped at `--limit`).
 ```json
 {
   "ok": true,
-  "data": <Asana resource (object) or array of resources>
+  "data": <Asana resource (object) or array of resources>,
+  "pagination": {
+    "pages_fetched": 3,
+    "truncated": true,
+    "next_offset": "...",
+    "next_path": "..."
+  }
 }
 ```
 
 `data` is the unwrapped Asana payload: an object for single-resource commands
 (`me`, `get-task`, `get-attachment`, `add-attachment`, `comment-on-task`,
 `update-task`), an array for list/search commands, and a download result object
-for `download-attachment`.
+for `download-attachment`. List/search commands also include `pagination` with
+`pages_fetched` and `truncated`; bounded results expose `next_offset` and/or
+`next_path` when Asana provides a resumable next page.
 
 **Error** (stderr, non-zero exit):
 
@@ -152,6 +163,9 @@ print as a plain message line instead.
 ```bash
 asana-cli me
 asana-cli list-workspaces --limit 50
+asana-cli list-workspaces --all
+asana-cli list-workspaces --all --max-pages 20
+asana-cli list-workspaces --offset eyJ0eXAiOiJKV1Qi...
 asana-cli list-projects --workspace-gid 12345
 asana-cli list-project-tasks --project-gid 12345
 asana-cli list-tag-tasks --tag-gid 67890

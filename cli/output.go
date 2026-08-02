@@ -8,10 +8,20 @@ import (
 	"github.com/dtonair/asana-cli/asana"
 )
 
+// paginationMetadata is included for list/search commands so callers can
+// distinguish complete results from results stopped by a bound.
+type paginationMetadata struct {
+	PagesFetched int    `json:"pages_fetched"`
+	Truncated    bool   `json:"truncated"`
+	NextOffset   string `json:"next_offset,omitempty"`
+	NextPath     string `json:"next_path,omitempty"`
+}
+
 // successEnvelope is the default machine-readable success output.
 type successEnvelope struct {
-	OK   bool `json:"ok"`
-	Data any  `json:"data"`
+	OK         bool                `json:"ok"`
+	Data       any                 `json:"data"`
+	Pagination *paginationMetadata `json:"pagination,omitempty"`
 }
 
 // errorEnvelope is the default machine-readable error output.
@@ -37,11 +47,32 @@ func writeJSON(w io.Writer, v any) error {
 // writeSuccess renders a successful result. In human mode it writes humanText;
 // otherwise it writes the JSON success envelope wrapping data.
 func writeSuccess(w io.Writer, data any, human bool, humanText string) error {
+	return writeSuccessWithPagination(w, data, nil, human, humanText)
+}
+
+func writeSuccessWithPagination(w io.Writer, data any, pagination *paginationMetadata, human bool, humanText string) error {
 	if human {
+		if pagination != nil && pagination.Truncated {
+			humanText += "\nResults truncated."
+			if pagination.NextOffset != "" {
+				humanText += " Next offset: " + pagination.NextOffset + "."
+			} else if pagination.NextPath != "" {
+				humanText += " Next page: " + pagination.NextPath + "."
+			}
+		}
 		_, err := fmt.Fprintln(w, humanText)
 		return err
 	}
-	return writeJSON(w, successEnvelope{OK: true, Data: data})
+	return writeJSON(w, successEnvelope{OK: true, Data: data, Pagination: pagination})
+}
+
+func pageMetadata(result asana.PageResult) *paginationMetadata {
+	return &paginationMetadata{
+		PagesFetched: result.PagesFetched,
+		Truncated:    result.Truncated,
+		NextOffset:   result.NextOffset,
+		NextPath:     result.NextPath,
+	}
 }
 
 // writeError renders an error. In human mode it writes the plain message;

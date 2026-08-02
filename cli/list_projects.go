@@ -12,14 +12,15 @@ import (
 func newListProjectsCommand() *cobra.Command {
 	var (
 		workspaceGID string
-		limit        int
+		pagination   paginationOptions
 		optFields    string
 	)
 	cmd := &cobra.Command{
 		Use:   "list-projects",
 		Short: "List projects in an Asana workspace",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateLimit(limit); err != nil {
+			limit, err := pagination.validate(cmd, 100)
+			if err != nil {
 				return err
 			}
 			c, cfg, err := buildClient()
@@ -35,18 +36,21 @@ func newListProjectsCommand() *cobra.Command {
 
 			q := url.Values{}
 			q.Set("limit", strconv.Itoa(pageSize))
+			if pagination.offset != "" {
+				q.Set("offset", pagination.offset)
+			}
 			appendOptFields(q, optFields)
 			path := "/workspaces/" + asana.EncodePathSegment(workspace) + "/projects" + querySuffix(q)
-			items, err := c.Paginate(ctx, path, limit, maxPages)
+			result, err := c.Paginate(ctx, path, limit, paginationPageLimit(cmd, &pagination))
 			if err != nil {
 				return err
 			}
-			human := humanList(items, summarizeProject, "No projects found.")
-			return writeSuccess(cmd.OutOrStdout(), items, opts.human, human)
+			human := humanList(result.Items, summarizeProject, "No projects found.")
+			return writeSuccessWithPagination(cmd.OutOrStdout(), result.Items, pageMetadata(result), opts.human, human)
 		},
 	}
 	cmd.Flags().StringVar(&workspaceGID, "workspace-gid", "", "Asana workspace GID (defaults to ASANA_DEFAULT_WORKSPACE)")
-	cmd.Flags().IntVar(&limit, "limit", 20, "maximum items to return (1-100)")
+	pagination.addFlags(cmd, 20)
 	cmd.Flags().StringVar(&optFields, "opt-fields", "", "comma-separated Asana opt_fields")
 	return cmd
 }
