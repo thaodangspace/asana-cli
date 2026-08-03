@@ -149,6 +149,9 @@ func formatHTTPError(e *HTTPError) string {
 	case http.StatusTooManyRequests:
 		return "Asana rate limit reached. Retry later."
 	default:
+		if e.ResponseExcerpt == "" {
+			return fmt.Sprintf("Asana request failed with %d %s", e.Status, e.StatusText)
+		}
 		return fmt.Sprintf("Asana request failed with %d %s: %s", e.Status, e.StatusText, e.ResponseExcerpt)
 	}
 }

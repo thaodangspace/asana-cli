@@ -96,6 +96,7 @@ func newRootCommand() *cobra.Command {
 		newUpdateTaskCommand(),
 		newDeleteTaskCommand(),
 		newDuplicateTaskCommand(),
+		newAPICommand(),
 	)
 
 	return root

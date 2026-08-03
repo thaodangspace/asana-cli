@@ -103,7 +103,8 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `create-task` | `POST /tasks` | `--name` plus workspace, project, or parent context; supports dates, notes, followers, sections, and custom fields. |
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 mutable field. Supports explicit clearing and tri-state booleans. |
 | `delete-task` | `DELETE /tasks/{gid}` | `--task-gid` and `--confirm` or `--yes`. Returns `data: null`. |
-| `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. |
+| `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. Returns an asynchronous job. |
+| `api` | arbitrary relative API path | `METHOD PATH`, repeatable `--query`, optional JSON `--data`/`@FILE`, and `--raw-response`. Advanced escape hatch. |
 
 All list/search commands support `--limit` (the maximum number of items),
 `--all`, `--offset`, and `--max-pages`. `--all` follows pages until Asana
@@ -133,6 +134,23 @@ and multipart uploads are intentionally not retried because they may mutate
 Asana more than once. Use `--no-retry` for one-shot behavior. With `--verbose`,
 retry attempts are logged to stderr with only the method and safe path.
 
+The advanced `api` command supports authenticated GET, POST, PUT, PATCH, and
+DELETE requests to relative paths under the Asana API base:
+
+```bash
+asana-cli api GET /tasks/123
+asana-cli api GET /workspaces/123/tasks/search --query 'projects.any=456' --query 'completed=false'
+asana-cli api POST /tasks --data '{"data":{"name":"Ship v2","workspace":"123"}}'
+asana-cli api PUT /tasks/123 --data @update.json
+asana-cli api DELETE /tasks/123
+```
+
+`--data` must be valid JSON and supports files up to 10 MiB. Absolute or
+cross-origin paths are rejected, and callers cannot override authorization
+headers. Responses unwrap Asana's `data` field by default; `--raw-response`
+keeps the complete decoded response envelope. Empty successful responses return
+`data: null`.
+
 ## Output contract
 
 **Success** (stdout):
@@ -154,7 +172,8 @@ retry attempts are logged to stderr with only the method and safe path.
 (`me`, `get-task`, `get-attachment`, `add-attachment`, `comment-on-task`,
 `create-task`, `update-task`), a duplication job for `duplicate-task`, `null`
 for `delete-task`, an array for list/search commands, and a download result object
-for `download-attachment`. List/search commands also include `pagination` with
+for `download-attachment`. The advanced `api` command unwraps `data` by default
+(or returns the complete response with `--raw-response`). List/search commands also include `pagination` with
 `pages_fetched` and `truncated`; bounded results expose `next_offset` and/or
 `next_path` when Asana provides a resumable next page.
 
@@ -211,6 +230,7 @@ asana-cli update-task --task-gid 12345 --assignee me --notes "Reassigned."
 asana-cli delete-task --task-gid 12345 --yes
 asana-cli duplicate-task --task-gid 12345 --name "Copy of Ship v2" --include subtasks,dependencies
 asana-cli update-task --task-gid 12345 --due-on ""   # clears the due date
+asana-cli api GET /teams/123/memberships --query 'limit=50'
 ```
 
 ## Documentation

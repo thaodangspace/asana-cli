@@ -24,7 +24,7 @@ cli/                           # Cobra command tree (one file per subcommand)
   output.go                    #   {ok,data} / {ok,error} envelopes, summarizers, humanList
   me.go list_workspaces.go list_projects.go search_tasks.go
   get_task.go list_task_stories.go comment_on_task.go update_task.go
-  list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go
+  list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go api.go
 docs/                           # Astro/Starlight static documentation site
 ```
 
@@ -54,6 +54,10 @@ docs/                           # Astro/Starlight static documentation site
 - **Persistent flags** live on the root and populate the package-level `opts`
   (`--human`, `--verbose`, `--timeout`, `--max-retries`, `--retry-max-wait`,
   `--no-retry`).
+- **Generic API:** `api METHOD PATH` supports authenticated GET/POST/PUT/PATCH/DELETE
+  calls to relative paths, repeatable encoded `--query` values, validated inline
+  JSON or `@file` bodies (up to 10 MiB), and `--raw-response`. Absolute paths and
+  custom headers are rejected; empty successful responses render `data: null`.
 - **Attachments:** `list-task-attachments` uses `GET /attachments?parent={task_gid}`;
   `get-attachment` uses `GET /attachments/{gid}`; `download-attachment` fetches
   metadata with `opt_fields=gid,name,download_url`, then streams `download_url`
