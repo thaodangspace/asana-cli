@@ -64,6 +64,13 @@ func paginationPageLimit(cmd *cobra.Command, p *paginationOptions) int {
 // ASANA_API_BASE overrides the API base URL; it exists only to point tests at
 // an httptest server and is not a documented user-facing flag.
 func buildClient() (*asana.Client, config.Config, error) {
+	if opts.maxRetries < 0 {
+		return nil, config.Config{}, usageErrorf("--max-retries must be zero or greater, got %d", opts.maxRetries)
+	}
+	if opts.retryMaxWait <= 0 {
+		return nil, config.Config{}, usageErrorf("--retry-max-wait must be greater than zero, got %s", opts.retryMaxWait)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, config.Config{}, &usageError{err: err}
@@ -77,6 +84,11 @@ func buildClient() (*asana.Client, config.Config, error) {
 	if opts.verbose {
 		copts = append(copts, asana.WithVerbose(os.Stderr))
 	}
+	copts = append(copts, asana.WithRetryConfig(asana.RetryConfig{
+		MaxRetries: opts.maxRetries,
+		MaxWait:    opts.retryMaxWait,
+		Disabled:   opts.noRetry,
+	}))
 	return asana.NewClient(cfg.AccessToken, httpClient, copts...), cfg, nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestClient(t *testing.T, h http.HandlerFunc) *Client {
@@ -402,4 +403,161 @@ func asHTTPError(err error, target **HTTPError) bool {
 		*target = he
 	}
 	return ok
+}
+
+func TestRequestRetries429AndHonorsCappedRetryAfter(t *testing.T) {
+	hits := 0
+	var waits []time.Duration
+	c := NewClient("secret-token", nil,
+		WithBaseURL("http://example.test"),
+		WithRetryConfig(RetryConfig{MaxRetries: 2, MaxWait: 500 * time.Millisecond}),
+		WithSleeper(func(_ context.Context, delay time.Duration) error {
+			waits = append(waits, delay)
+			return nil
+		}),
+	)
+	c.httpClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		hits++
+		if hits == 1 {
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     http.Header{"Retry-After": []string{"10"}},
+				Body:       io.NopCloser(strings.NewReader("busy")),
+				Request:    req,
+			}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"data":{}}`)), Request: req}, nil
+	})}
+
+	if _, err := c.Request(context.Background(), http.MethodGet, "/items?signature=secret-token", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hits != 2 || len(waits) != 1 || waits[0] != 500*time.Millisecond {
+		t.Errorf("hits=%d waits=%v, want one capped retry", hits, waits)
+	}
+}
+
+func TestRequestRetries503WithBackoffAndExhausts(t *testing.T) {
+	hits := 0
+	var waits []time.Duration
+	c := NewClient("secret-token", nil,
+		WithBaseURL("http://example.test"),
+		WithRetryConfig(RetryConfig{MaxRetries: 2, MaxWait: time.Second}),
+		WithSleeper(func(_ context.Context, delay time.Duration) error {
+			waits = append(waits, delay)
+			return nil
+		}),
+	)
+	c.httpClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		hits++
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("down")), Request: req}, nil
+	})}
+
+	_, err := c.Request(context.Background(), http.MethodGet, "/items", nil)
+	var httpErr *HTTPError
+	if !asHTTPError(err, &httpErr) || httpErr.Status != http.StatusServiceUnavailable {
+		t.Fatalf("expected final 503, got %v", err)
+	}
+	if hits != 3 || len(waits) != 2 {
+		t.Errorf("hits=%d waits=%v, want initial plus two retries", hits, waits)
+	}
+	if waits[1] <= waits[0] {
+		t.Errorf("backoff did not increase: %v", waits)
+	}
+}
+
+func TestRequestStopsWhenCanceledDuringBackoff(t *testing.T) {
+	hits := 0
+	c := NewClient("secret-token", nil,
+		WithBaseURL("http://example.test"),
+		WithRetryConfig(RetryConfig{MaxRetries: 3, MaxWait: time.Second}),
+		WithSleeper(func(ctx context.Context, _ time.Duration) error { return ctx.Err() }),
+	)
+	c.httpClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		hits++
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("down")), Request: req}, nil
+	})}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.Request(ctx, http.MethodGet, "/items", nil)
+	if err != context.Canceled {
+		t.Errorf("error = %v, want context canceled", err)
+	}
+	if hits != 1 {
+		t.Errorf("hits = %d, want one request", hits)
+	}
+}
+
+func TestRequestDoesNotRetryNonRetryableOrMutatingFailures(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		hits := 0
+		c := NewClient("secret-token", nil,
+			WithBaseURL("http://example.test"),
+			WithRetryConfig(RetryConfig{MaxRetries: 3, MaxWait: time.Second}),
+			WithSleeper(func(context.Context, time.Duration) error { t.Fatal("unexpected sleep"); return nil }),
+		)
+		c.httpClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			hits++
+			return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader("bad")), Request: req}, nil
+		})}
+		_, err := c.Request(context.Background(), method, "/items", nil)
+		if err == nil || hits != 1 {
+			t.Errorf("method=%s err=%v hits=%d, want one request", method, err, hits)
+		}
+	}
+}
+
+func TestRetryAfterParsesSecondsAndHTTPDate(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	c := NewClient("t", nil, WithRetryConfig(RetryConfig{MaxRetries: 1, MaxWait: time.Minute}), WithClock(func() time.Time { return now }))
+	if got, ok := c.retryAfter("7"); !ok || got != 7*time.Second {
+		t.Errorf("seconds = %v, %v", got, ok)
+	}
+	if got, ok := c.retryAfter(now.Add(9 * time.Second).Format(http.TimeFormat)); !ok || got != 9*time.Second {
+		t.Errorf("date = %v, %v", got, ok)
+	}
+	if _, ok := c.retryAfter("not-a-delay"); ok {
+		t.Error("invalid Retry-After parsed successfully")
+	}
+}
+
+func TestUploadIsNotRetried(t *testing.T) {
+	hits := 0
+	c := NewClient("secret-token", nil, WithBaseURL("http://example.test"), WithRetryConfig(RetryConfig{MaxRetries: 3, MaxWait: time.Second}))
+	c.httpClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		hits++
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("down")), Request: req}, nil
+	})}
+	_, err := c.Upload(context.Background(), "/attachments", map[string]string{"parent": "1"}, "file", "x.txt", strings.NewReader("data"))
+	if err == nil || hits != 1 {
+		t.Errorf("err=%v hits=%d, want one upload request", err, hits)
+	}
+}
+
+func TestVerboseRetryLogIsSafe(t *testing.T) {
+	var log bytes.Buffer
+	hits := 0
+	c := NewClient("secret-token", nil,
+		WithBaseURL("http://example.test"), WithVerbose(&log),
+		WithRetryConfig(RetryConfig{MaxRetries: 1, MaxWait: time.Second}),
+		WithSleeper(func(context.Context, time.Duration) error { return nil }),
+	)
+	c.httpClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		hits++
+		if hits == 1 {
+			return &http.Response{StatusCode: http.StatusTooManyRequests, Body: io.NopCloser(strings.NewReader("busy")), Request: req}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Request: req}, nil
+	})}
+	_, _ = c.Request(context.Background(), http.MethodGet, "/items?token=secret-token", nil)
+	if strings.Contains(log.String(), "secret-token") || strings.Contains(log.String(), "?") || !strings.Contains(log.String(), "attempt 1/1") {
+		t.Errorf("unsafe or incomplete retry log: %q", log.String())
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }

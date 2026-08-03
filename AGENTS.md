@@ -52,7 +52,8 @@ docs/                           # Astro/Starlight static documentation site
   `--due-on` is validated as `YYYY-MM-DD` client-side; `--assignee` accepts a
   user GID or `me` (no email lookup).
 - **Persistent flags** live on the root and populate the package-level `opts`
-  (`--human`, `--verbose`, `--timeout`).
+  (`--human`, `--verbose`, `--timeout`, `--max-retries`, `--retry-max-wait`,
+  `--no-retry`).
 - **Attachments:** `list-task-attachments` uses `GET /attachments?parent={task_gid}`;
   `get-attachment` uses `GET /attachments/{gid}`; `download-attachment` fetches
   metadata with `opt_fields=gid,name,download_url`, then streams `download_url`
@@ -62,11 +63,12 @@ docs/                           # Astro/Starlight static documentation site
   `POST /attachments`): fields `parent`=`--task-gid` and `file` (streamed from
   `--file`), with `--name` overriding the display/file name (defaults to the
   file's base name). Missing flags and a nonexistent/unreadable `--file` are
-  usage errors (exit 2).
+  usage errors (exit 2). Multipart uploads are one-shot and are never retried.
 
 ## Testing
 
-- `go test ./...` — no network/token needed.
+- `go test ./...` — no network/token needed. Retry tests inject a sleeper and
+  clock, so they do not wait on real backoff.
 - Command tests use `runWithServer` (in `commands_test.go`): spins up `httptest`,
   sets `ASANA_ACCESS_TOKEN=tok`, `ASANA_API_BASE=<server>`, and `ASANA_CONFIG`
   to an absent temp path, runs the root command, returns stdout + error. Assert

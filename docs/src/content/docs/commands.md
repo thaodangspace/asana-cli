@@ -8,6 +8,9 @@ description: Query Asana resources, inspect attachments, and perform explicit wr
 - `--human` prints readable summaries instead of JSON.
 - `--verbose` logs request method and path to stderr; the token is never logged.
 - `--timeout duration` sets the HTTP timeout. The default is 30 seconds.
+- `--max-retries N` retries transient GET/DELETE requests after the initial request (default 3).
+- `--retry-max-wait duration` caps one retry delay, including `Retry-After` (default 30 seconds).
+- `--no-retry` disables retries for deterministic one-shot behavior.
 
 ## Read commands
 
@@ -68,3 +71,14 @@ Every list/search command accepts:
 Requests use a page size of 50. JSON responses include `pagination` metadata;
 when traversal stops with another page available, `truncated` is true and the
 next offset/path is included. Human output says when results are truncated.
+
+## Retries
+
+The client retries `429`, `500`, `502`, `503`, and `504` responses and temporary
+network failures for replayable GET/DELETE requests. A `Retry-After` header is
+honored in integer-seconds or HTTP-date form, subject to `--retry-max-wait`;
+otherwise exponential backoff with jitter is used. Retries are bounded by both
+`--max-retries` and `--timeout`, and stop immediately when the context is
+canceled. JSON POST/PUT requests and multipart uploads are one-shot to avoid
+duplicating mutations. Use `--verbose` to see safe retry method/path, attempt,
+and wait details; credentials and query values are never logged.
