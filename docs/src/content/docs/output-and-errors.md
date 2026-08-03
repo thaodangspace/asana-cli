@@ -23,7 +23,10 @@ JSON is the default output. Successful commands emit an envelope:
 List and search commands include pagination metadata. `--all` follows every
 page; `--offset` resumes a collection; and `--max-pages` can mark a bounded
 result as truncated. Single-resource commands omit `pagination`. `data` remains
-the unwrapped Asana object or array.
+the unwrapped Asana object or array. Create and update commands return the
+affected task; duplicate-task returns Asana's asynchronous duplication job;
+delete-task returns `data: null` even when Asana responds with an empty
+`204 No Content` body.
 
 Downloads return a small result object containing the attachment ID, name,
 output path, and bytes written. When `truncated` is true, use the returned
