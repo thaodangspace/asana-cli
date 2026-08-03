@@ -101,6 +101,7 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `add-attachment` | `POST /attachments` (multipart) | `--task-gid`, `--file` (both required), `--name`. Write command. |
 | `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 of `--name`, `--notes`, `--completed`, `--due-on`, `--assignee`. Write command. |
+| `api` | arbitrary relative API path | `METHOD PATH`, repeatable `--query`, optional JSON `--data`/`@FILE`, and `--raw-response`. Advanced escape hatch. |
 
 All list/search commands support `--limit` (the maximum number of items),
 `--all`, `--offset`, and `--max-pages`. `--all` follows pages until Asana
@@ -120,6 +121,23 @@ stop when `--timeout` or the command context is canceled. JSON POST/PUT requests
 and multipart uploads are intentionally not retried because they may mutate
 Asana more than once. Use `--no-retry` for one-shot behavior. With `--verbose`,
 retry attempts are logged to stderr with only the method and safe path.
+
+The advanced `api` command supports authenticated GET, POST, PUT, PATCH, and
+DELETE requests to relative paths under the Asana API base:
+
+```bash
+asana-cli api GET /tasks/123
+asana-cli api GET /workspaces/123/tasks/search --query 'projects.any=456' --query 'completed=false'
+asana-cli api POST /tasks --data '{"data":{"name":"Ship v2","workspace":"123"}}'
+asana-cli api PUT /tasks/123 --data @update.json
+asana-cli api DELETE /tasks/123
+```
+
+`--data` must be valid JSON and supports files up to 10 MiB. Absolute or
+cross-origin paths are rejected, and callers cannot override authorization
+headers. Responses unwrap Asana's `data` field by default; `--raw-response`
+keeps the complete decoded response envelope. Empty successful responses return
+`data: null`.
 
 ## Output contract
 
@@ -141,7 +159,8 @@ retry attempts are logged to stderr with only the method and safe path.
 `data` is the unwrapped Asana payload: an object for single-resource commands
 (`me`, `get-task`, `get-attachment`, `add-attachment`, `comment-on-task`,
 `update-task`), an array for list/search commands, and a download result object
-for `download-attachment`. List/search commands also include `pagination` with
+for `download-attachment`. The advanced `api` command unwraps `data` by default
+(or returns the complete response with `--raw-response`). List/search commands also include `pagination` with
 `pages_fetched` and `truncated`; bounded results expose `next_offset` and/or
 `next_path` when Asana provides a resumable next page.
 
@@ -194,6 +213,7 @@ asana-cli update-task --task-gid 12345 --completed
 asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
 asana-cli update-task --task-gid 12345 --assignee me --notes "Reassigned."
 asana-cli update-task --task-gid 12345 --due-on ""   # clears the due date
+asana-cli api GET /teams/123/memberships --query 'limit=50'
 ```
 
 ## Documentation

@@ -12,6 +12,9 @@ description: Query Asana resources, inspect attachments, and perform explicit wr
 - `--retry-max-wait duration` caps one retry delay, including `Retry-After` (default 30 seconds).
 - `--no-retry` disables retries for deterministic one-shot behavior.
 
+The advanced `api` command does not log request bodies or query values with
+`--verbose` and never permits overriding the authorization header.
+
 ## Read commands
 
 ```sh
@@ -42,6 +45,26 @@ asana-cli add-attachment --task-gid GID --file PATH [--name NAME]
 Downloads refuse to overwrite an existing file unless `--overwrite` is passed.
 Failed downloads remove partial output files. Uploads are write operations and
 require the appropriate Asana token scope.
+
+## Advanced API command
+
+Use `api` for endpoints that do not yet have a first-class wrapper:
+
+```sh
+asana-cli api GET /tasks/123
+asana-cli api GET /workspaces/123/tasks/search \
+  --query 'projects.any=456' --query 'completed=false'
+asana-cli api POST /tasks --data '{"data":{"name":"Ship v2","workspace":"123"}}'
+asana-cli api PUT /tasks/123 --data @update.json
+asana-cli api DELETE /tasks/123
+```
+
+The method must be `GET`, `POST`, `PUT`, `PATCH`, or `DELETE`; the path must be
+relative to the Asana API base. Repeatable `--query key=value` flags are safely
+encoded, and `--data` accepts validated inline JSON or a JSON file up to 10 MiB.
+Absolute/cross-origin paths and custom headers are rejected. Responses unwrap
+Asana's `data` field by default; use `--raw-response` to retain the complete
+response envelope. Empty successful responses return `data: null`.
 
 ## Write commands
 
