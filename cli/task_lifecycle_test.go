@@ -32,7 +32,7 @@ func TestCreateTaskFullyPopulated(t *testing.T) {
 		body = decodeTaskRequest(t, r)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"data":{"gid":"99","name":"Ship v2","completed":false}}`))
-	}, "create-task", "--workspace-gid", "ws1", "--name", "Ship v2", "--project-gid", "p1", "--section-gid", "s1", "--assignee", "me", "--notes", "details", "--due-on", "2026-08-15", "--start-at", "2026-08-01T09:00:00Z", "--follower", "u1", "--follower", "u2", "--custom-field", "cf-text=hello", "--custom-field", "cf-number=42", "--custom-field", `cf-options=["o1","o2"]`)
+	}, "create-task", "--workspace-gid", "ws1", "--name", "Ship v2", "--project-gid", "p1", "--section-gid", "s1", "--assignee", "me", "--notes", "details", "--due-on", "2026-08-15", "--start-on", "2026-08-01", "--follower", "u1", "--follower", "u2", "--custom-field", "cf-text=hello", "--custom-field", "cf-number=json:42", "--custom-field", "cf-options=json:[\"o1\",\"o2\"]")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestCreateTaskFullyPopulated(t *testing.T) {
 	if string(body["memberships"]) != `[{"project":"p1","section":"s1"}]` {
 		t.Errorf("memberships = %s", body["memberships"])
 	}
-	if string(body["due_on"]) != `"2026-08-15"` || string(body["start_at"]) != `"2026-08-01T09:00:00Z"` {
+	if string(body["due_on"]) != `"2026-08-15"` || string(body["start_on"]) != `"2026-08-01"` {
 		t.Errorf("dates = due %s start %s", body["due_on"], body["start_at"])
 	}
 	var fields map[string]any
@@ -108,7 +108,7 @@ func TestUpdateTaskExtendedFieldsAndClearing(t *testing.T) {
 	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
 		body = decodeTaskRequest(t, r)
 		w.Write([]byte(`{"data":{"gid":"1","completed":false}}`))
-	}, "update-task", "--task-gid", "1", "--html-notes", "<b>x</b>", "--due-at", "2026-08-15T12:00:00+00:00", "--start-on", "", "--follower", "u1", "--follower", "u2", "--custom-field", "cf=["+`"opt"`+"]")
+	}, "update-task", "--task-gid", "1", "--html-notes", "<b>x</b>", "--due-at", "2026-08-15T12:00:00+00:00", "--start-on", "", "--follower", "u1", "--follower", "u2", "--custom-field", "cf=json:["+`"opt"`+"]")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestDuplicateTask(t *testing.T) {
 			t.Errorf("request = %s %s", r.Method, r.URL.Path)
 		}
 		body = decodeTaskRequest(t, r)
-		w.Write([]byte(`{"data":{"gid":"2","name":"Copy"}}`))
+		w.Write([]byte(`{"data":{"gid":"job1","resource_type":"job","status":"queued"}}`))
 	}, "duplicate-task", "--task-gid", "1", "--name", "Copy", "--include", "subtasks,stories", "--include", "followers")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -161,9 +161,12 @@ func TestDuplicateTask(t *testing.T) {
 	if string(body["include_subtasks"]) != "true" || string(body["include_stories"]) != "true" || string(body["include_followers"]) != "true" {
 		t.Errorf("include fields = %v", body)
 	}
-	var task struct{ GID string }
-	decodeData(t, out, &task)
-	if task.GID != "2" {
-		t.Errorf("gid = %q", task.GID)
+	var job struct {
+		GID    string `json:"gid"`
+		Status string `json:"status"`
+	}
+	decodeData(t, out, &job)
+	if job.GID != "job1" || job.Status != "queued" {
+		t.Errorf("job = %#v", job)
 	}
 }

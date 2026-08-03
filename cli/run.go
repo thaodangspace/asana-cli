@@ -127,9 +127,6 @@ func requestData(ctx context.Context, c *asana.Client, method, path string, body
 	if err != nil {
 		return nil, err
 	}
-	if len(strings.TrimSpace(string(raw))) == 0 {
-		return nil, nil
-	}
 	var env struct {
 		Data json.RawMessage `json:"data"`
 	}

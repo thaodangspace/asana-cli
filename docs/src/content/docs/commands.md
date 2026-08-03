@@ -58,24 +58,28 @@ asana-cli duplicate-task --task-gid GID --name "Copy" --include subtasks,depende
 
 `create-task` requires `--name` and at least one task context: workspace,
 project, or parent task. `--project-gid`, `--follower`, and `--custom-field`
-are repeatable. Custom-field values are strings unless they are valid JSON
-literals, which makes numbers, arrays (multi-enum/people), booleans, `null`, and
-quoted strings available without field metadata. For example:
+are repeatable. Custom-field scalar values are strings by default, preserving
+numeric Asana GIDs. Prefix values with `json:` for numbers, arrays
+(multi-enum/people), booleans, `null`, and quoted strings. For example:
 
 ```sh
 asana-cli create-task --workspace-gid WORKSPACE --name "Ship v2" \
-  --custom-field 123=text --custom-field 456=42 \
-  --custom-field 789='["option-a","option-b"]'
+  --custom-field 123=text --custom-field 456=json:42 \
+  --custom-field 789='json:["option-a","option-b"]'
 ```
 
-Date-only flags use `YYYY-MM-DD` and date-time flags use RFC 3339. Date/date-time
-variants cannot be supplied together (`--due-on` with `--due-at`, or `--start-on`
-with `--start-at`), and `--notes` and `--html-notes` are mutually exclusive.
+Date-only flags use `YYYY-MM-DD` and date-time flags use RFC 3339. A start date
+requires a matching due date in the same invocation. Date/date-time variants
+cannot be supplied together (`--due-on` with `--due-at`, or `--start-on` with
+`--start-at`), and `--notes` and `--html-notes` are mutually exclusive.
 `update-task` requires at least one changed field and preserves explicit false
-values. Empty notes, dates, assignees, followers, projects, and parent values
-clear those fields where Asana supports clearing them. `delete-task` requires
+values. Project, section, and parent changes use Asana's dedicated relationship
+endpoints; project replacement first reads existing memberships. Empty notes,
+dates, assignees, followers, projects, and parent values clear those fields
+where Asana supports clearing them. `delete-task` requires
 `--confirm` or `--yes` and always returns a stable success envelope with
-`data: null`. Treat all of these commands, plus `add-attachment`, as mutating
+`data: null`. `duplicate-task` returns the asynchronous duplication job,
+not the eventual task. Treat all of these commands, plus `add-attachment`, as mutating
 commands and run them only when explicitly requested.
 
 ## Pagination

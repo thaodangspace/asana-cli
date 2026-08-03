@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -54,6 +55,9 @@ func newUpdateTaskCommand() *cobra.Command {
 			if cmd.Flags().Changed("completed") {
 				data["completed"] = completed
 			}
+			if err := validateStartDependency(cmd); err != nil {
+				return err
+			}
 			if err := addDatePair(cmd, data, "due-on", dueOn, "due_on", "due-at", dueAt, "due_at"); err != nil {
 				return err
 			}
@@ -64,32 +68,23 @@ func newUpdateTaskCommand() *cobra.Command {
 			if err := addFollowers(data, cmd, followers); err != nil {
 				return err
 			}
-			if err := addProjects(data, cmd, projects); err != nil {
-				return err
-			}
-			if cmd.Flags().Changed("parent-task-gid") {
-				if value := strings.TrimSpace(parentTaskGID); value == "" {
-					data["parent"] = nil
-				} else {
-					data["parent"] = value
+			if !(len(projects) == 1 && strings.TrimSpace(projects[0]) == "") {
+				if err := validateGIDList(projects, "project-gid"); err != nil {
+					return err
 				}
 			}
 			if err := addCustomFields(data, customFields); err != nil {
 				return err
 			}
 
-			if cmd.Flags().Changed("section-gid") {
-				section := strings.TrimSpace(sectionGID)
-				if section == "" {
-					return usageErrorf("--section-gid cannot be empty")
-				}
-				if len(projects) != 1 || strings.TrimSpace(projects[0]) == "" {
-					return usageErrorf("--section-gid requires exactly one --project-gid")
-				}
-				addSectionMembership(data, []string{strings.TrimSpace(projects[0])}, section)
+			section := strings.TrimSpace(sectionGID)
+			if cmd.Flags().Changed("section-gid") && section == "" {
+				return usageErrorf("--section-gid cannot be empty")
 			}
+			relationshipChanged := cmd.Flags().Changed("project-gid") ||
+				cmd.Flags().Changed("section-gid") || cmd.Flags().Changed("parent-task-gid")
 
-			if len(data) == 0 {
+			if len(data) == 0 && !relationshipChanged {
 				return usageErrorf("at least one field flag must be set (--name, --notes, --html-notes, --completed, --due-on, --due-at, --start-on, --start-at, --assignee, --follower, --project-gid, --section-gid, --parent-task-gid, --custom-field)")
 			}
 
@@ -100,10 +95,41 @@ func newUpdateTaskCommand() *cobra.Command {
 			ctx, cancel := withTimeout(cmd)
 			defer cancel()
 
-			path := "/tasks/" + asana.EncodePathSegment(gid)
-			raw, err := requestData(ctx, c, http.MethodPut, path, map[string]any{"data": data})
-			if err != nil {
-				return err
+			var raw json.RawMessage
+			if len(data) > 0 {
+				path := "/tasks/" + asana.EncodePathSegment(gid)
+				raw, err = requestData(ctx, c, http.MethodPut, path, map[string]any{"data": data})
+				if err != nil {
+					return err
+				}
+			}
+			if cmd.Flags().Changed("project-gid") {
+				desired := make([]string, 0, len(projects))
+				for _, project := range projects {
+					desired = append(desired, strings.TrimSpace(project))
+				}
+				if len(desired) == 1 && desired[0] == "" {
+					desired = nil
+				}
+				if err := replaceTaskProjects(ctx, c, gid, desired); err != nil {
+					return err
+				}
+			}
+			if cmd.Flags().Changed("section-gid") {
+				if err := addTaskToSection(ctx, c, gid, section); err != nil {
+					return err
+				}
+			}
+			if cmd.Flags().Changed("parent-task-gid") {
+				if err := setTaskParent(ctx, c, gid, parentTaskGID); err != nil {
+					return err
+				}
+			}
+			if relationshipChanged {
+				raw, err = getTaskAfterRelationships(ctx, c, gid)
+				if err != nil {
+					return err
+				}
 			}
 			human := fmt.Sprintf("Updated task: %s", summarizeTask(raw))
 			return writeSuccess(cmd.OutOrStdout(), raw, opts.human, human)
@@ -121,8 +147,8 @@ func newUpdateTaskCommand() *cobra.Command {
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee user GID or me; empty string unassigns")
 	cmd.Flags().StringArrayVar(&followers, "follower", nil, "follower user GID (repeatable; empty value clears followers)")
 	cmd.Flags().StringArrayVar(&projects, "project-gid", nil, "replace project memberships (repeatable; empty value clears projects)")
-	cmd.Flags().StringVar(&sectionGID, "section-gid", "", "move into a section (requires exactly one --project-gid)")
+	cmd.Flags().StringVar(&sectionGID, "section-gid", "", "move into a section using Asana's section endpoint")
 	cmd.Flags().StringVar(&parentTaskGID, "parent-task-gid", "", "parent task GID; empty string clears the parent")
-	cmd.Flags().StringArrayVar(&customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; JSON values supported)")
+	cmd.Flags().StringArrayVar(&customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; use json: for typed JSON)")
 	return cmd
 }

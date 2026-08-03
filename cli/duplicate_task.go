@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -50,7 +51,16 @@ func newDuplicateTaskCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			human := fmt.Sprintf("Duplicated task: %s", summarizeTask(raw))
+			var job struct {
+				GID    string `json:"gid"`
+				Status string `json:"status"`
+			}
+			_ = json.Unmarshal(raw, &job)
+			human := fmt.Sprintf("Started duplication job %s", orUnknown(job.GID))
+			if job.Status != "" {
+				human += " [" + job.Status + "]"
+			}
+			human += "."
 			return writeSuccess(cmd.OutOrStdout(), raw, opts.human, human)
 		},
 	}

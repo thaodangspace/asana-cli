@@ -115,12 +115,14 @@ are retained. `--all --max-pages N` provides a bounded full traversal.
 Requests use a page size of 50. `--completed` is tri-state: omitted entirely
 unless you pass it (`--completed=true` or `--completed=false`). Task creation
 requires `--name` and a workspace, project, or parent context. `--project-gid`,
-`--follower`, and `--custom-field` are repeatable. Custom field values are
-plain strings by default, or JSON literals for numbers, booleans, null, arrays,
-and quoted strings (for example `--custom-field 123=["option-a","option-b"]`).
-Date-only flags use `YYYY-MM-DD`; date-time flags use RFC 3339. The `--due-on` /
-`--due-at` pair and `--start-on` / `--start-at` pair are mutually exclusive, as
-are `--notes` and `--html-notes`.
+`--follower`, and `--custom-field` are repeatable. Custom field scalar values
+are strings by default, preserving numeric Asana GIDs; prefix values with
+`json:` for numbers, arrays, booleans, null, or quoted strings (for example
+`--custom-field 123=json:["option-a","option-b"]`). Date-only flags use
+`YYYY-MM-DD`; date-time flags use RFC 3339. A start date requires the matching
+due date in the same invocation, and date/date-time variants cannot be mixed.
+`--notes` and `--html-notes` are mutually exclusive. Update project, section,
+and parent relationships use Asana's dedicated endpoints rather than PUT.
 
 GET and DELETE requests retry `429`, `500`, `502`, `503`, and `504` responses,
 as well as temporary network failures, up to three times by default. `Retry-After`
@@ -150,8 +152,8 @@ retry attempts are logged to stderr with only the method and safe path.
 
 `data` is the unwrapped Asana payload: an object for single-resource commands
 (`me`, `get-task`, `get-attachment`, `add-attachment`, `comment-on-task`,
-`create-task`, `update-task`, `duplicate-task`), `null` for `delete-task`, an
-array for list/search commands, and a download result object
+`create-task`, `update-task`), a duplication job for `duplicate-task`, `null`
+for `delete-task`, an array for list/search commands, and a download result object
 for `download-attachment`. List/search commands also include `pagination` with
 `pages_fetched` and `truncated`; bounded results expose `next_offset` and/or
 `next_path` when Asana provides a resumable next page.

@@ -50,6 +50,9 @@ func newCreateTaskCommand() *cobra.Command {
 			if cmd.Flags().Changed("completed") {
 				data["completed"] = completed
 			}
+			if err := validateStartDependency(cmd); err != nil {
+				return err
+			}
 			if err := addDatePair(cmd, data, "due-on", dueOn, "due_on", "due-at", dueAt, "due_at"); err != nil {
 				return err
 			}
@@ -119,7 +122,7 @@ func newCreateTaskCommand() *cobra.Command {
 	cmd.Flags().StringVar(&startOn, "start-on", "", "start date YYYY-MM-DD")
 	cmd.Flags().StringVar(&startAt, "start-at", "", "start date-time in RFC 3339")
 	cmd.Flags().StringArrayVar(&followers, "follower", nil, "follower user GID (repeatable; empty value clears followers)")
-	cmd.Flags().StringArrayVar(&customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; JSON values supported)")
+	cmd.Flags().StringArrayVar(&customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; use json: for typed JSON)")
 	cmd.Flags().StringVar(&parentTaskGID, "parent-task-gid", "", "parent task GID")
 	return cmd
 }

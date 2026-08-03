@@ -8,9 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// parseCustomFields accepts FIELD_GID=VALUE assignments. Values are decoded
-// as JSON when possible (numbers, booleans, null, arrays, and quoted strings),
-// and otherwise remain strings. This covers Asana text, number, enum,
+// parseCustomFields accepts FIELD_GID=VALUE assignments. Scalar values remain
+// strings so numeric Asana enum/people GIDs cannot be accidentally converted to
+// numbers. Prefix a value with json: to send a JSON number, boolean, null,
+// array, object, or quoted string. This covers Asana text, number, enum,
 // multi-enum, date, and people custom fields without requiring field metadata.
 func parseCustomFields(assignments []string) (map[string]any, error) {
 	if len(assignments) == 0 {
@@ -37,13 +38,17 @@ func parseCustomFields(assignments []string) (map[string]any, error) {
 			fields[gid] = nil
 			continue
 		}
+		if !strings.HasPrefix(raw, "json:") {
+			fields[gid] = raw
+			continue
+		}
+		raw = strings.TrimSpace(strings.TrimPrefix(raw, "json:"))
+		if raw == "" || !json.Valid([]byte(raw)) {
+			return nil, usageErrorf("--custom-field json value for %q must be valid JSON", gid)
+		}
 		var value any
-		if json.Valid([]byte(raw)) {
-			if err := json.Unmarshal([]byte(raw), &value); err != nil {
-				return nil, usageErrorf("invalid --custom-field value for %q: %v", gid, err)
-			}
-		} else {
-			value = raw
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			return nil, usageErrorf("invalid --custom-field value for %q: %v", gid, err)
 		}
 		fields[gid] = value
 	}
@@ -74,6 +79,16 @@ func validateDateTime(value, flag string) (any, error) {
 
 // addDatePair applies either the date-only or date-time variant. Asana treats
 // each pair as alternatives, not two fields that can be sent together.
+func validateStartDependency(cmd *cobra.Command) error {
+	if cmd.Flags().Changed("start-at") && !cmd.Flags().Changed("due-at") {
+		return usageErrorf("--start-at requires --due-at in the same invocation")
+	}
+	if cmd.Flags().Changed("start-on") && !cmd.Flags().Changed("due-on") && !cmd.Flags().Changed("due-at") {
+		return usageErrorf("--start-on requires --due-on or --due-at in the same invocation")
+	}
+	return nil
+}
+
 func addDatePair(cmd *cobra.Command, data map[string]any, dateFlag, dateValue, dateKey, timeFlag, timeValue, timeKey string) error {
 	dateSet := cmd.Flags().Changed(dateFlag)
 	timeSet := cmd.Flags().Changed(timeFlag)
