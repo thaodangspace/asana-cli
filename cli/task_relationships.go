@@ -79,6 +79,7 @@ func replaceTaskProjects(ctx context.Context, c *asana.Client, taskGID string, d
 		if err := relationshipMutation(ctx, c, path, map[string]any{"project": project}); err != nil {
 			return err
 		}
+		currentSet[project] = true
 	}
 	return nil
 }

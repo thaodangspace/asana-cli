@@ -77,8 +77,8 @@ func validateDateTime(value, flag string) (any, error) {
 	return value, nil
 }
 
-// addDatePair applies either the date-only or date-time variant. Asana treats
-// each pair as alternatives, not two fields that can be sent together.
+// validateStartDependency enforces Asana's requirement that a start date and
+// its corresponding due date are supplied in the same request.
 func validateStartDependency(cmd *cobra.Command) error {
 	if cmd.Flags().Changed("start-at") && !cmd.Flags().Changed("due-at") {
 		return usageErrorf("--start-at requires --due-at in the same invocation")
