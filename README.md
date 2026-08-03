@@ -70,7 +70,7 @@ commands require either it or an explicit `--workspace-gid`.
 Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 `tasks:read`, `stories:read`, `attachments:read`, `attachments:write` for
 `add-attachment`, `stories:write` for `comment-on-task`, and `tasks:write` for
-`update-task`.
+`create-task`, `update-task`, `duplicate-task`, and `delete-task`.
 
 ## Global flags
 
@@ -100,7 +100,10 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `download-attachment` | `GET /attachments/{gid}` then attachment `download_url` | `--attachment-gid`, `--output` (both required), `--overwrite` |
 | `add-attachment` | `POST /attachments` (multipart) | `--task-gid`, `--file` (both required), `--name`. Write command. |
 | `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
-| `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 of `--name`, `--notes`, `--completed`, `--due-on`, `--assignee`. Write command. |
+| `create-task` | `POST /tasks` | `--name` plus workspace, project, or parent context; supports dates, notes, followers, sections, and custom fields. |
+| `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 mutable field. Supports explicit clearing and tri-state booleans. |
+| `delete-task` | `DELETE /tasks/{gid}` | `--task-gid` and `--confirm` or `--yes`. Returns `data: null`. |
+| `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. |
 
 All list/search commands support `--limit` (the maximum number of items),
 `--all`, `--offset`, and `--max-pages`. `--all` follows pages until Asana
@@ -110,7 +113,14 @@ are retained. `--all --max-pages N` provides a bounded full traversal.
 `--offset` resumes from an Asana offset token. `--max-pages` must be positive.
 
 Requests use a page size of 50. `--completed` is tri-state: omitted entirely
-unless you pass it (`--completed=true` or `--completed=false`).
+unless you pass it (`--completed=true` or `--completed=false`). Task creation
+requires `--name` and a workspace, project, or parent context. `--project-gid`,
+`--follower`, and `--custom-field` are repeatable. Custom field values are
+plain strings by default, or JSON literals for numbers, booleans, null, arrays,
+and quoted strings (for example `--custom-field 123=["option-a","option-b"]`).
+Date-only flags use `YYYY-MM-DD`; date-time flags use RFC 3339. The `--due-on` /
+`--due-at` pair and `--start-on` / `--start-at` pair are mutually exclusive, as
+are `--notes` and `--html-notes`.
 
 GET and DELETE requests retry `429`, `500`, `502`, `503`, and `504` responses,
 as well as temporary network failures, up to three times by default. `Retry-After`
@@ -140,7 +150,8 @@ retry attempts are logged to stderr with only the method and safe path.
 
 `data` is the unwrapped Asana payload: an object for single-resource commands
 (`me`, `get-task`, `get-attachment`, `add-attachment`, `comment-on-task`,
-`update-task`), an array for list/search commands, and a download result object
+`create-task`, `update-task`, `duplicate-task`), `null` for `delete-task`, an
+array for list/search commands, and a download result object
 for `download-attachment`. List/search commands also include `pagination` with
 `pages_fetched` and `truncated`; bounded results expose `next_offset` and/or
 `next_path` when Asana provides a resumable next page.
@@ -190,9 +201,13 @@ asana-cli download-attachment --attachment-gid 67890 --output ./Screenshot.png
 asana-cli add-attachment --task-gid 12345 --file ./Screenshot.png
 asana-cli add-attachment --task-gid 12345 --file ./out.log --name "run.log"
 asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
+asana-cli create-task --workspace-gid 12345 --name "Ship v2" --project-gid 67890 --due-on 2026-07-15
+asana-cli create-task --name "Subtask" --parent-task-gid 12345 --follower 67890
 asana-cli update-task --task-gid 12345 --completed
 asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
 asana-cli update-task --task-gid 12345 --assignee me --notes "Reassigned."
+asana-cli delete-task --task-gid 12345 --yes
+asana-cli duplicate-task --task-gid 12345 --name "Copy of Ship v2" --include subtasks,dependencies
 asana-cli update-task --task-gid 12345 --due-on ""   # clears the due date
 ```
 

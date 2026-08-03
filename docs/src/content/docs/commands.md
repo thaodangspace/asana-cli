@@ -47,15 +47,36 @@ require the appropriate Asana token scope.
 
 ```sh
 asana-cli comment-on-task --task-gid GID --text "Comment"
+asana-cli create-task --workspace-gid WORKSPACE --name "Ship v2" \
+  --project-gid PROJECT --section-gid SECTION --due-on 2026-08-15
 asana-cli update-task --task-gid GID --completed
 asana-cli update-task --task-gid GID --name "New name" --due-on 2026-07-15
 asana-cli update-task --task-gid GID --assignee me --notes "Updated"
+asana-cli delete-task --task-gid GID --yes
+asana-cli duplicate-task --task-gid GID --name "Copy" --include subtasks,dependencies
 ```
 
-`update-task` requires at least one changed field. `--notes`, `--due-on`, and
-`--assignee` accept an explicit empty string to clear those values; `--name` may
-not be empty. Treat `comment-on-task`, `update-task`, and `add-attachment` as
-mutating commands and run them only when explicitly requested.
+`create-task` requires `--name` and at least one task context: workspace,
+project, or parent task. `--project-gid`, `--follower`, and `--custom-field`
+are repeatable. Custom-field values are strings unless they are valid JSON
+literals, which makes numbers, arrays (multi-enum/people), booleans, `null`, and
+quoted strings available without field metadata. For example:
+
+```sh
+asana-cli create-task --workspace-gid WORKSPACE --name "Ship v2" \
+  --custom-field 123=text --custom-field 456=42 \
+  --custom-field 789='["option-a","option-b"]'
+```
+
+Date-only flags use `YYYY-MM-DD` and date-time flags use RFC 3339. Date/date-time
+variants cannot be supplied together (`--due-on` with `--due-at`, or `--start-on`
+with `--start-at`), and `--notes` and `--html-notes` are mutually exclusive.
+`update-task` requires at least one changed field and preserves explicit false
+values. Empty notes, dates, assignees, followers, projects, and parent values
+clear those fields where Asana supports clearing them. `delete-task` requires
+`--confirm` or `--yes` and always returns a stable success envelope with
+`data: null`. Treat all of these commands, plus `add-attachment`, as mutating
+commands and run them only when explicitly requested.
 
 ## Pagination
 
