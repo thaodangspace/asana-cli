@@ -6,17 +6,41 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultBaseURL is the Asana REST API v1.0 root.
 const DefaultBaseURL = "https://app.asana.com/api/1.0"
+
+// Retry defaults used by clients and the CLI.
+const (
+	// DefaultMaxRetries is the number of retries after the initial request.
+	DefaultMaxRetries = 3
+	// DefaultRetryMaxWait bounds one retry delay, including Retry-After delays.
+	DefaultRetryMaxWait = 30 * time.Second
+	retryBaseDelay      = 100 * time.Millisecond
+)
+
+// RetryConfig controls bounded retries for replayable requests. Only GET and
+// DELETE requests are retried: retrying mutating JSON requests could duplicate
+// an Asana operation, and multipart uploads are never replayed.
+type RetryConfig struct {
+	MaxRetries int
+	MaxWait    time.Duration
+	Disabled   bool
+}
+
+type sleeper func(context.Context, time.Duration) error
 
 // Client performs authenticated requests against the Asana API.
 type Client struct {
@@ -25,6 +49,13 @@ type Client struct {
 	baseURL    string
 	verbose    bool
 	logw       io.Writer
+	retry      RetryConfig
+	sleep      sleeper
+	now        func() time.Time
+}
+
+func defaultRetryConfig() RetryConfig {
+	return RetryConfig{MaxRetries: DefaultMaxRetries, MaxWait: DefaultRetryMaxWait}
 }
 
 // Option configures a Client.
@@ -43,6 +74,36 @@ func WithVerbose(w io.Writer) Option {
 	}
 }
 
+// WithRetryConfig overrides the client's retry policy.
+func WithRetryConfig(config RetryConfig) Option {
+	return func(c *Client) {
+		if config.MaxWait <= 0 {
+			config.MaxWait = DefaultRetryMaxWait
+		}
+		c.retry = config
+	}
+}
+
+// WithSleeper replaces the context-aware retry sleeper. It is primarily useful
+// for tests; production callers should use the default sleeper.
+func WithSleeper(fn func(context.Context, time.Duration) error) Option {
+	return func(c *Client) {
+		if fn != nil {
+			c.sleep = fn
+		}
+	}
+}
+
+// WithClock replaces the clock used to parse HTTP-date Retry-After values.
+// It is primarily useful for tests.
+func WithClock(now func() time.Time) Option {
+	return func(c *Client) {
+		if now != nil {
+			c.now = now
+		}
+	}
+}
+
 // NewClient builds a Client. httpClient may be nil to use http.DefaultClient's
 // transport with the given client (callers typically pass one with a Timeout).
 func NewClient(token string, httpClient *http.Client, opts ...Option) *Client {
@@ -53,6 +114,9 @@ func NewClient(token string, httpClient *http.Client, opts ...Option) *Client {
 		httpClient: httpClient,
 		token:      token,
 		baseURL:    DefaultBaseURL,
+		retry:      defaultRetryConfig(),
+		sleep:      sleepContext,
+		now:        time.Now,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -223,46 +287,187 @@ func excerpt(body []byte) string {
 	return s
 }
 
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (c *Client) retriesEnabled(method string) bool {
+	if c.retry.Disabled || c.retry.MaxRetries <= 0 {
+		return false
+	}
+	return method == http.MethodGet || method == http.MethodDelete
+}
+
+func retryableStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status == http.StatusInternalServerError ||
+		status == http.StatusBadGateway || status == http.StatusServiceUnavailable ||
+		status == http.StatusGatewayTimeout
+}
+
+func retryableNetworkError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary())
+}
+
+func (c *Client) retryAfter(value string) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds < 0 {
+			return 0, false
+		}
+		if seconds == 0 {
+			return 0, true
+		}
+		if seconds > int64((time.Duration(1<<63-1))/time.Second) {
+			return c.retry.MaxWait, true
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return 0, false
+	}
+	return maxDuration(0, when.Sub(c.now())), true
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (c *Client) retryDelay(retryNumber int, retryAfter string) time.Duration {
+	if delay, ok := c.retryAfter(retryAfter); ok {
+		return capDuration(delay, c.retry.MaxWait)
+	}
+	if retryNumber < 1 {
+		retryNumber = 1
+	}
+	backoff := retryBaseDelay
+	for i := 1; i < retryNumber && backoff < c.retry.MaxWait; i++ {
+		if backoff > time.Duration(1<<62) {
+			break
+		}
+		backoff *= 2
+	}
+	backoff = capDuration(backoff, c.retry.MaxWait)
+	if backoff <= 1 {
+		return backoff
+	}
+	// Full jitter is deliberately bounded away from zero so retries do not
+	// turn into a tight loop while still spreading concurrent clients.
+	half := backoff / 2
+	return half + time.Duration(rand.Int63n(int64(backoff-half)+1))
+}
+
+func capDuration(delay, cap time.Duration) time.Duration {
+	if cap > 0 && delay > cap {
+		return cap
+	}
+	if delay < 0 {
+		return 0
+	}
+	return delay
+}
+
+func (c *Client) waitForRetry(ctx context.Context, method, path string, retryNumber int, retryAfter string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	delay := c.retryDelay(retryNumber, retryAfter)
+	if c.verbose && c.logw != nil {
+		fmt.Fprintf(c.logw, "retry %s %s attempt %d/%d wait %s\n", method,
+			redactSecret(displayPath(path), c.token), retryNumber, c.retry.MaxRetries, delay)
+	}
+	return c.sleep(ctx, delay)
+}
+
 // Request performs an HTTP request and returns the raw response body. A non-2xx
-// status yields an *HTTPError. body, when non-nil, is JSON-encoded.
+// status yields an *HTTPError. body, when non-nil, is JSON-encoded. Replayable
+// GET and DELETE requests retry selected transient failures; JSON mutations do
+// not retry because repeating them could duplicate an operation.
 func (c *Client) Request(ctx context.Context, method, pathOrURL string, body any) (json.RawMessage, error) {
 	fullURL := c.buildURL(pathOrURL)
-
-	var reqBody io.Reader
+	var encoded []byte
 	if body != nil {
-		encoded, err := json.Marshal(body)
+		var err error
+		encoded, err = json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("encode request body: %w", err)
 		}
-		reqBody = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, fullURL, reqBody)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	for attempt := 0; ; attempt++ {
+		var reqBody io.Reader
+		if encoded != nil {
+			reqBody = bytes.NewReader(encoded)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, fullURL, reqBody)
+		if err != nil {
+			return nil, redactError(err, c.token)
+		}
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
 
-	if c.verbose && c.logw != nil {
-		fmt.Fprintf(c.logw, "%s %s\n", method, redactSecret(displayPath(pathOrURL), c.token))
-	}
+		if attempt == 0 && c.verbose && c.logw != nil {
+			fmt.Fprintf(c.logw, "%s %s\n", method, redactSecret(displayPath(pathOrURL), c.token))
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if c.retriesEnabled(method) && retryableNetworkError(err) && attempt < c.retry.MaxRetries {
+				if retryErr := c.waitForRetry(ctx, method, pathOrURL, attempt+1, ""); retryErr != nil {
+					return nil, retryErr
+				}
+				continue
+			}
+			return nil, redactError(err, c.token)
+		}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	payload, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		payload, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			if c.retriesEnabled(method) && retryableNetworkError(readErr) && attempt < c.retry.MaxRetries {
+				if retryErr := c.waitForRetry(ctx, method, pathOrURL, attempt+1, ""); retryErr != nil {
+					return nil, retryErr
+				}
+				continue
+			}
+			return nil, redactError(readErr, c.token)
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return json.RawMessage(payload), nil
+		}
+		if c.retriesEnabled(method) && retryableStatus(resp.StatusCode) && attempt < c.retry.MaxRetries {
+			if retryErr := c.waitForRetry(ctx, method, pathOrURL, attempt+1, resp.Header.Get("Retry-After")); retryErr != nil {
+				return nil, retryErr
+			}
+			continue
+		}
 		return nil, &HTTPError{
 			Method:          method,
 			URL:             redactSecret(safeURL(fullURL), c.token),
@@ -272,8 +477,6 @@ func (c *Client) Request(ctx context.Context, method, pathOrURL string, body any
 			ResponseExcerpt: redactSecret(excerpt(payload), c.token),
 		}
 	}
-
-	return json.RawMessage(payload), nil
 }
 
 // Download performs a GET and streams the response body to w. It authenticates
@@ -288,15 +491,6 @@ func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (i
 	}
 	if !c.shouldAuthenticate(pathOrURL) && !isHTTPS(target) {
 		return 0, fmt.Errorf("refusing download from an external non-HTTPS URL")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
-	if err != nil {
-		return 0, redactError(err, c.token)
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-	if c.shouldAuthenticate(pathOrURL) {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
 	safePath := displayPath(pathOrURL)
@@ -329,16 +523,49 @@ func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (i
 		return redirectErr
 	}
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return 0, redactError(err, c.token)
-	}
-	defer resp.Body.Close()
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+		if err != nil {
+			return 0, redactError(err, c.token)
+		}
+		req.Header.Set("Accept", "application/octet-stream")
+		if c.shouldAuthenticate(pathOrURL) {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			if c.retriesEnabled(http.MethodGet) && retryableNetworkError(err) && attempt < c.retry.MaxRetries {
+				if retryErr := c.waitForRetry(ctx, http.MethodGet, pathOrURL, attempt+1, ""); retryErr != nil {
+					return 0, retryErr
+				}
+				continue
+			}
+			return 0, redactError(err, c.token)
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			written, copyErr := io.Copy(w, resp.Body)
+			resp.Body.Close()
+			return written, copyErr
+		}
+
 		payload, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if readErr != nil {
-			return 0, readErr
+			if c.retriesEnabled(http.MethodGet) && retryableNetworkError(readErr) && attempt < c.retry.MaxRetries {
+				if retryErr := c.waitForRetry(ctx, http.MethodGet, pathOrURL, attempt+1, ""); retryErr != nil {
+					return 0, retryErr
+				}
+				continue
+			}
+			return 0, redactError(readErr, c.token)
+		}
+		if c.retriesEnabled(http.MethodGet) && retryableStatus(resp.StatusCode) && attempt < c.retry.MaxRetries {
+			if retryErr := c.waitForRetry(ctx, http.MethodGet, pathOrURL, attempt+1, resp.Header.Get("Retry-After")); retryErr != nil {
+				return 0, retryErr
+			}
+			continue
 		}
 		return 0, &HTTPError{
 			Method:          http.MethodGet,
@@ -349,15 +576,14 @@ func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (i
 			ResponseExcerpt: redactSecret(excerpt(payload), c.token),
 		}
 	}
-
-	return io.Copy(w, resp.Body)
 }
 
 // Upload performs an authenticated multipart/form-data POST, streaming file
 // content from r as the form field named fileField (with the given fileName).
 // Additional simple text fields are sent from the fields map. It returns the
-// raw response body; a non-2xx status yields an *HTTPError. The token is never
-// logged.
+// raw response body; a non-2xx status yields an *HTTPError. Multipart uploads
+// are intentionally one-shot and are never retried because the reader may not
+// be replayable and repeating an upload can create duplicate attachments.
 func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string]string, fileField, fileName string, r io.Reader) (json.RawMessage, error) {
 	fullURL := c.buildURL(pathOrURL)
 
@@ -381,7 +607,7 @@ func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, &buf)
 	if err != nil {
-		return nil, err
+		return nil, redactError(err, c.token)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
@@ -393,13 +619,13 @@ func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, redactError(err, c.token)
 	}
 	defer resp.Body.Close()
 
 	payload, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, redactError(err, c.token)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

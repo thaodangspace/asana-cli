@@ -78,7 +78,10 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 |------|---------|-------------|
 | `--human` | off | Print human-readable summaries instead of JSON |
 | `--verbose` | off | Log request method + path to stderr (never the token) |
-| `--timeout` | `30s` | HTTP request timeout |
+| `--timeout` | `30s` | HTTP request timeout, including retries |
+| `--max-retries` | `3` | retries for transient GET/DELETE requests after the initial request |
+| `--retry-max-wait` | `30s` | cap for one retry delay, including `Retry-After` |
+| `--no-retry` | off | disable retries for deterministic one-shot behavior |
 
 ## Commands
 
@@ -108,6 +111,15 @@ are retained. `--all --max-pages N` provides a bounded full traversal.
 
 Requests use a page size of 50. `--completed` is tri-state: omitted entirely
 unless you pass it (`--completed=true` or `--completed=false`).
+
+GET and DELETE requests retry `429`, `500`, `502`, `503`, and `504` responses,
+as well as temporary network failures, up to three times by default. `Retry-After`
+is honored when present (integer seconds or an HTTP date) and capped by
+`--retry-max-wait`; other delays use exponential backoff with jitter. Retries
+stop when `--timeout` or the command context is canceled. JSON POST/PUT requests
+and multipart uploads are intentionally not retried because they may mutate
+Asana more than once. Use `--no-retry` for one-shot behavior. With `--verbose`,
+retry attempts are logged to stderr with only the method and safe path.
 
 ## Output contract
 

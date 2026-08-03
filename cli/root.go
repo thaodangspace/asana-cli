@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/thaodangspace/asana-cli/asana"
 )
 
 // Exit codes (see spec): 0 success, 1 runtime/API/network error,
@@ -34,9 +36,12 @@ func usageErrorf(format string, args ...any) error {
 
 // globalOptions holds the persistent flags shared by every subcommand.
 type globalOptions struct {
-	human   bool
-	verbose bool
-	timeout time.Duration
+	human        bool
+	verbose      bool
+	timeout      time.Duration
+	maxRetries   int
+	retryMaxWait time.Duration
+	noRetry      bool
 }
 
 // opts is populated by the root command's persistent flags before any
@@ -69,6 +74,9 @@ func newRootCommand() *cobra.Command {
 	pf.BoolVar(&opts.human, "human", false, "print human-readable summaries instead of JSON")
 	pf.BoolVar(&opts.verbose, "verbose", false, "log request method and path to stderr (never the token)")
 	pf.DurationVar(&opts.timeout, "timeout", 30*time.Second, "HTTP request timeout")
+	pf.IntVar(&opts.maxRetries, "max-retries", asana.DefaultMaxRetries, "maximum retries for transient GET/DELETE requests")
+	pf.DurationVar(&opts.retryMaxWait, "retry-max-wait", asana.DefaultRetryMaxWait, "maximum wait for a single retry")
+	pf.BoolVar(&opts.noRetry, "no-retry", false, "disable retries and make one request only")
 
 	root.AddCommand(
 		newMeCommand(),
