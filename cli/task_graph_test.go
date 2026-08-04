@@ -65,7 +65,7 @@ func TestRelationshipMutationBodiesAndEscapedPaths(t *testing.T) {
 		if string(body["dependencies"]) != `["dep"]` {
 			t.Errorf("body = %s", body["dependencies"])
 		}
-		w.WriteHeader(http.StatusNoContent)
+		w.Write([]byte(`{"data":{}}`))
 	}, "add-dependency", "--task-gid", "a/b", "--dependency-task-gid", "dep")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -76,6 +77,12 @@ func humanRelationshipList(items []json.RawMessage, taskGID, label string) strin
 	return strings.Join(lines, "\n")
 }
 
+func relationshipDataIsEmpty(data json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(data)
+	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) ||
+		bytes.Equal(trimmed, []byte("{}")) || bytes.Equal(trimmed, []byte("[]"))
+}
+
 func executeRelationshipMutation(cmd *cobra.Command, method, path string, data, result map[string]any, human string) error {
 	c, _, err := buildClient()
 	if err != nil {
@@ -94,7 +101,7 @@ func executeRelationshipMutation(cmd *cobra.Command, method, path string, data, 
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if len(raw) > 0 && json.Unmarshal(raw, &envelope) == nil && len(envelope.Data) > 0 && string(envelope.Data) != "null" {
+	if len(raw) > 0 && json.Unmarshal(raw, &envelope) == nil && !relationshipDataIsEmpty(envelope.Data) {
 		output = envelope.Data
 	}
 	return writeSuccess(cmd.OutOrStdout(), output, opts.human, human)
