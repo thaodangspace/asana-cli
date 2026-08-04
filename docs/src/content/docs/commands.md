@@ -28,10 +28,47 @@ asana-cli get-task --task-gid GID [--opt-fields FIELDS]
 asana-cli list-task-stories --task-gid GID [pagination options]
 ```
 
-`search-tasks` accepts `--text`, `--assignee`, `--completed`, `--limit`, and
-`--opt-fields`. The `--completed` filter is tri-state: it is omitted unless you
-explicitly pass `--completed=true` or `--completed=false`. Search may require a
-premium Asana workspace.
+`search-tasks` accepts the common filters below. Repeatable filters generate
+repeatable Asana query parameters; the legacy `--assignee` flag remains an
+alias for `--assignee-any`.
+
+| Filter | Flags | Asana parameter |
+| --- | --- | --- |
+| Text | `--text` | `text` |
+| Assignee | `--assignee-any`, `--assignee-not` | `assignee.any`, `assignee.not` |
+| Project | `--project-any`, `--project-not` | `projects.any`, `projects.not` |
+| Section | `--section-any`, `--section-not` | `sections.any`, `sections.not` |
+| Tag | `--tag-any`, `--tag-not` | `tags.any`, `tags.not` |
+| Team/follower | `--team-any`, `--follower-any` | `teams.any`, `followers.any` |
+| Completion | `--completed` | `completed` |
+| Due/start dates | `--due-on`, `--due-before`, `--due-after`, `--start-before`, `--start-after` | `due_on`, `due_on.before`, `due_on.after`, `start_on.before`, `start_on.after` |
+| Timestamps | `--created-{before,after}`, `--modified-{before,after}`, `--completed-{before,after}` | `created_at.*`, `modified_at.*`, `completed_at.*` |
+| Ordering | `--sort-by`, `--sort-ascending` | `sort_by`, `sort_ascending` |
+| Task subtype | `--resource-subtype` | `resource_subtype` |
+
+Date-only values use `YYYY-MM-DD`; timestamp values use RFC 3339. Known sort
+values are `created_at`, `due_date`, `likes`, `modified_at`, and `name`. The
+`--completed` filter is tri-state: it is omitted unless you explicitly pass
+`--completed=true` or `--completed=false`. Search may require a premium Asana
+workspace.
+
+For parameters not covered by a first-class flag, use repeatable `--query`
+values. Query keys are preserved exactly and values are URL encoded:
+
+```sh
+# overdue open tasks in a project
+asana-cli search-tasks --workspace-gid WORKSPACE --project-any PROJECT \
+  --completed=false --due-before 2026-08-31 --sort-by due_date
+
+# recently modified tasks matching a custom field
+asana-cli search-tasks --workspace-gid WORKSPACE \
+  --query 'custom_fields.111.value=222' \
+  --query 'modified_at.after=2026-08-01T00:00:00Z'
+```
+
+`--query` cannot override `limit` or `offset`; use the pagination flags instead.
+Conflicting duplicate scalar keys are rejected, while documented list keys may
+be repeated. First-class filters and `--query` compose in one request.
 
 ## Attachment commands
 
