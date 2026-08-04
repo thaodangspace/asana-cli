@@ -14,17 +14,8 @@ func newCreateTaskCommand() *cobra.Command {
 		name          string
 		projects      []string
 		sectionGID    string
-		assignee      string
-		notes         string
-		htmlNotes     string
-		completed     bool
-		dueOn         string
-		dueAt         string
-		startOn       string
-		startAt       string
-		followers     []string
-		customFields  []string
 		parentTaskGID string
+		fields        commonTaskFields
 	)
 	cmd := &cobra.Command{
 		Use:   "create-task",
@@ -44,26 +35,7 @@ func newCreateTaskCommand() *cobra.Command {
 			parent := strings.TrimSpace(parentTaskGID)
 
 			data := map[string]any{"name": taskName}
-			if err := addNotes(data, cmd, notes, htmlNotes); err != nil {
-				return err
-			}
-			if cmd.Flags().Changed("completed") {
-				data["completed"] = completed
-			}
-			if err := validateStartDependency(cmd); err != nil {
-				return err
-			}
-			if err := addDatePair(cmd, data, "due-on", dueOn, "due_on", "due-at", dueAt, "due_at"); err != nil {
-				return err
-			}
-			if err := addDatePair(cmd, data, "start-on", startOn, "start_on", "start-at", startAt, "start_at"); err != nil {
-				return err
-			}
-			addAssignee(data, cmd, assignee)
-			if err := addFollowers(data, cmd, followers); err != nil {
-				return err
-			}
-			if err := addCustomFields(data, customFields); err != nil {
+			if err := fields.addTo(cmd, data); err != nil {
 				return err
 			}
 
@@ -113,16 +85,7 @@ func newCreateTaskCommand() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "task name (required)")
 	cmd.Flags().StringArrayVar(&projects, "project-gid", nil, "project GID (repeatable)")
 	cmd.Flags().StringVar(&sectionGID, "section-gid", "", "initial section GID (requires exactly one --project-gid)")
-	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee user GID or me")
-	cmd.Flags().StringVar(&notes, "notes", "", "plain-text task description")
-	cmd.Flags().StringVar(&htmlNotes, "html-notes", "", "HTML task description (mutually exclusive with --notes)")
-	cmd.Flags().BoolVar(&completed, "completed", false, "initial completion state (sent only when set)")
-	cmd.Flags().StringVar(&dueOn, "due-on", "", "due date YYYY-MM-DD")
-	cmd.Flags().StringVar(&dueAt, "due-at", "", "due date-time in RFC 3339")
-	cmd.Flags().StringVar(&startOn, "start-on", "", "start date YYYY-MM-DD")
-	cmd.Flags().StringVar(&startAt, "start-at", "", "start date-time in RFC 3339")
-	cmd.Flags().StringArrayVar(&followers, "follower", nil, "follower user GID (repeatable; empty value clears followers)")
-	cmd.Flags().StringArrayVar(&customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; use json: for typed JSON)")
+	fields.addFlags(cmd)
 	cmd.Flags().StringVar(&parentTaskGID, "parent-task-gid", "", "parent task GID")
 	return cmd
 }

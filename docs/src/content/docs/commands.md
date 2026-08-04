@@ -29,13 +29,36 @@ asana-cli get-section --section-gid GID [--opt-fields FIELDS]
 asana-cli list-section-tasks --section-gid GID [pagination options]
 asana-cli list-project-tasks --project-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli list-tag-tasks --tag-gid GID [pagination options] [--opt-fields FIELDS]
-asana-cli search-tasks --workspace-gid GID [search and pagination options]
+asana-cli search-tasks --workspace-gid GID [search options]
 asana-cli get-task --task-gid GID [--opt-fields FIELDS]
 asana-cli list-task-stories --task-gid GID [pagination options]
+asana-cli list-subtasks --task-gid GID [pagination options]
+asana-cli list-dependencies --task-gid GID [pagination options]
+asana-cli list-dependents --task-gid GID [pagination options]
 ```
 
-`search-tasks` accepts `--text`, `--assignee`, `--completed`, `--limit`, and
-`--opt-fields`. The `--completed` filter is tri-state: it is omitted unless you
+`search-tasks` accepts the common filters below. Repeatable filters are joined
+as comma-separated Asana query values; the legacy `--assignee` flag remains an
+alias for `--assignee-any`.
+
+| Filter | Flags | Asana parameter |
+| --- | --- | --- |
+| Text | `--text` | `text` |
+| Assignee | `--assignee-any`, `--assignee-not` | `assignee.any`, `assignee.not` |
+| Project | `--project-any`, `--project-not` | `projects.any`, `projects.not` |
+| Section | `--section-any`, `--section-not` | `sections.any`, `sections.not` |
+| Tag | `--tag-any`, `--tag-not` | `tags.any`, `tags.not` |
+| Team/follower | `--team-any`, `--follower-any` | `teams.any`, `followers.any` |
+| Completion | `--completed` | `completed` |
+| Due/start dates | `--due-on`, `--due-before`, `--due-after`, `--start-before`, `--start-after` | `due_on`, `due_on.before`, `due_on.after`, `start_on.before`, `start_on.after` |
+| Timestamps | `--created-{before,after}`, `--modified-{before,after}`, `--completed-{before,after}` | `created_at.*`, `modified_at.*`, `completed_at.*` |
+| Ordering | `--sort-by`, `--sort-ascending` | `sort_by`, `sort_ascending` |
+| Task subtype | `--resource-subtype` | `resource_subtype` |
+
+Date-only values use `YYYY-MM-DD`; timestamp values use RFC 3339. Known sort
+values are `due_date`, `created_at`, `completed_at`, `likes`, `relevance`, and
+`modified_at`. Resource subtypes are `default_task`, `milestone`, `approval`,
+or `custom`. The `--completed` filter is tri-state: it is omitted unless you
 explicitly pass `--completed=true` or `--completed=false`. Search may require a
 premium Asana workspace.
 
@@ -125,6 +148,14 @@ asana-cli update-task --task-gid GID --name "New name" --due-on 2026-07-15
 asana-cli update-task --task-gid GID --assignee me --notes "Updated"
 asana-cli delete-task --task-gid GID --yes
 asana-cli duplicate-task --task-gid GID --name "Copy" --include subtasks,dependencies
+
+# Task graph relationships
+asana-cli create-subtask --task-gid GID --name "Write release notes" --assignee me
+asana-cli set-task-parent --task-gid CHILD --parent-task-gid PARENT
+asana-cli add-dependency --task-gid TASK --dependency-task-gid BLOCKER
+asana-cli add-task-to-project --task-gid TASK --project-gid PROJECT --section-gid SECTION
+asana-cli add-tag-to-task --task-gid TASK --tag-gid TAG
+asana-cli add-task-followers --task-gid TASK --follower me --follower USER
 ```
 
 `create-task` requires `--name` and at least one task context: workspace,
@@ -147,7 +178,10 @@ cannot be supplied together (`--due-on` with `--due-at`, or `--start-on` with
 values. Project, section, and parent changes use Asana's dedicated relationship
 endpoints; project replacement first reads existing memberships. Empty notes,
 dates, assignees, followers, projects, and parent values clear those fields
-where Asana supports clearing them. `delete-task` requires
+where Asana supports clearing them. Task graph mutations use dedicated Asana
+relationship endpoints; project placement flags `--insert-before` and
+`--insert-after` are mutually exclusive, and follower flags preserve caller
+order. `delete-task` requires
 `--confirm` or `--yes` and always returns a stable success envelope with
 `data: null`. `duplicate-task` returns the asynchronous duplication job,
 not the eventual task. Treat all of these commands, plus `add-attachment`, as mutating
@@ -155,7 +189,7 @@ commands and run them only when explicitly requested.
 
 ## Pagination
 
-Every list/search command accepts:
+Collection commands accept:
 
 - `--limit N` — maximum items (default 20, or 100 for project/tag tasks).
 - `--all` — follow pages until `next_page` is absent. This cannot be combined
@@ -164,9 +198,10 @@ Every list/search command accepts:
 - `--max-pages N` — positive safety bound; the default is 10. `--all` is
   unlimited unless `--max-pages` is explicitly supplied.
 
-Requests use a page size of 50. JSON responses include `pagination` metadata;
-when traversal stops with another page available, `truncated` is true and the
-next offset/path is included. Human output says when results are truncated.
+Task search is an exception: it accepts one request page with `--limit` from 1
+through 100 and has no offset or continuation flags. JSON responses from
+collection commands include pagination metadata; human output says when
+collection results are truncated.
 
 ## Retries
 
