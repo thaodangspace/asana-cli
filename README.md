@@ -68,6 +68,7 @@ Keep the file private (`chmod 600 ~/.config/asana-cli.yaml`).
 commands require either it or an explicit `--workspace-gid`.
 
 Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
+`projects:write` for project/section lifecycle commands, `teams:read`,
 `tasks:read`, `stories:read`, `attachments:read`, `attachments:write` for
 `add-attachment`, `stories:write` for `comment-on-task`, and `tasks:write` for
 `create-task`, `update-task`, `duplicate-task`, and `delete-task`.
@@ -90,6 +91,13 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `me` | `GET /users/me` | |
 | `list-workspaces` | `GET /workspaces` | `--limit`, `--all`, `--offset`, `--max-pages`, `--opt-fields` |
 | `list-projects` | `GET /workspaces/{ws}/projects` | `--workspace-gid`, pagination flags, `--opt-fields` |
+| `get-project` | `GET /projects/{gid}` | `--project-gid`, `--opt-fields` |
+| `create-project` | `POST /projects` | project fields, workspace/team context |
+| `update-project` | `PUT /projects/{gid}` | `--project-gid` plus changed project fields |
+| `delete-project` | `DELETE /projects/{gid}` | `--project-gid`, `--confirm` or `--yes` |
+| `duplicate-project` | `POST /projects/{gid}/duplicate` | `--include` and repeatable `--option` |
+| `search-projects` | `GET /workspaces/{ws}/projects/search` | filters, pagination, repeatable `--query` |
+| `list-team-projects` | `GET /teams/{gid}/projects` | `--team-gid`, pagination flags |
 | `list-project-tasks` | `GET /projects/{project_gid}/tasks` | `--project-gid`, pagination flags, `--opt-fields` |
 | `list-tag-tasks` | `GET /tags/{tag_gid}/tasks` | `--tag-gid`, pagination flags, `--opt-fields` |
 | `search-tasks` | `GET /workspaces/{ws}/tasks/search` | search filters, pagination flags, `--opt-fields` (may require premium) |
@@ -104,6 +112,11 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 mutable field. Supports explicit clearing and tri-state booleans. |
 | `delete-task` | `DELETE /tasks/{gid}` | `--task-gid` and `--confirm` or `--yes`. Returns `data: null`. |
 | `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. Returns an asynchronous job. |
+| `list-sections` / `get-section` | `GET /projects/{gid}/sections`, `GET /sections/{gid}` | section/project GID |
+| `create-section` / `update-section` | `POST /projects/{gid}/sections`, `PUT /sections/{gid}` | `--name` |
+| `delete-section` / `move-section` | `DELETE /sections/{gid}`, `POST /sections/{gid}/insert` | confirmation and before/after positioning |
+| `add-task-to-section` | `POST /sections/{gid}/addTask` | task GID and optional before/after positioning |
+| `list-section-tasks` | `GET /sections/{gid}/tasks` | section GID and pagination |
 | `api` | arbitrary relative API path | `METHOD PATH`, repeatable `--query`, optional JSON `--data`/`@FILE`, and `--raw-response`. Advanced escape hatch. |
 
 All list/search commands support `--limit` (the maximum number of items),
@@ -211,6 +224,10 @@ asana-cli list-workspaces --all
 asana-cli list-workspaces --all --max-pages 20
 asana-cli list-workspaces --offset eyJ0eXAiOiJKV1Qi...
 asana-cli list-projects --workspace-gid 12345
+asana-cli create-project --workspace-gid 12345 --name "Launch v2" --public
+asana-cli create-section --project-gid 67890 --name "In progress"
+asana-cli add-task-to-section --section-gid 999 --task-gid 123 --after-task-gid 122
+asana-cli duplicate-project --project-gid 67890 --include tasks,members
 asana-cli list-project-tasks --project-gid 12345
 asana-cli list-tag-tasks --tag-gid 67890
 asana-cli search-tasks --text "release" --completed=false

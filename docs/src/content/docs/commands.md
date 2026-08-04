@@ -21,6 +21,12 @@ The advanced `api` command does not log request bodies or query values with
 asana-cli me [--opt-fields FIELDS]
 asana-cli list-workspaces [pagination options] [--opt-fields FIELDS]
 asana-cli list-projects --workspace-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli get-project --project-gid GID [--opt-fields FIELDS]
+asana-cli search-projects --workspace-gid GID [filters] [pagination options]
+asana-cli list-team-projects --team-gid GID [pagination options]
+asana-cli list-sections --project-gid GID [pagination options]
+asana-cli get-section --section-gid GID [--opt-fields FIELDS]
+asana-cli list-section-tasks --section-gid GID [pagination options]
 asana-cli list-project-tasks --project-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli list-tag-tasks --tag-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli search-tasks --workspace-gid GID [search and pagination options]
@@ -33,6 +39,48 @@ asana-cli list-task-stories --task-gid GID [pagination options]
 explicitly pass `--completed=true` or `--completed=false`. Search may require a
 premium Asana workspace.
 
+For parameters not covered by a first-class flag, use repeatable `--query`
+values. Query keys are preserved exactly and values are URL encoded:
+
+```sh
+# overdue open tasks in a project
+asana-cli search-tasks --workspace-gid WORKSPACE --project-any PROJECT \
+  --completed=false --due-before 2026-08-31 --sort-by due_date
+
+# recently modified tasks matching a custom field
+asana-cli search-tasks --workspace-gid WORKSPACE \
+  --query 'custom_fields.111.value=222' \
+  --query 'modified_at.after=2026-08-01T00:00:00Z'
+```
+
+`--query` cannot override `limit` or `offset`. Conflicting duplicate scalar
+keys are rejected, while documented list keys are combined as comma-separated
+values. First-class filters and `--query` compose in one request.
+
+Unlike collection endpoints, task search accepts one page only (up to 100
+results) and does not support `--offset`, `--all`, or `--max-pages` continuation.
+
+## Project and section lifecycle
+
+```sh
+asana-cli create-project --workspace-gid WORKSPACE --name "Launch v2" --public
+asana-cli update-project --project-gid PROJECT --archived=true --due-on 2026-12-31
+asana-cli duplicate-project --project-gid PROJECT --include tasks,members
+asana-cli create-section --project-gid PROJECT --name "In progress"
+asana-cli move-section --section-gid SECTION --before-section-gid OTHER
+asana-cli add-task-to-section --section-gid SECTION --task-gid TASK --after-task-gid OTHER
+asana-cli delete-section --section-gid SECTION --yes
+asana-cli delete-project --project-gid PROJECT --yes
+```
+
+Project updates use only explicitly supplied fields; optional booleans are
+tri-state and empty nullable values clear those fields. Project and section
+collections support `--limit`, `--all`, `--offset`, and `--max-pages`.
+`--before-section-gid`/`--after-section-gid` and
+`--before-task-gid`/`--after-task-gid` are mutually exclusive. Project search
+also accepts repeatable `--query key=value` values. Duplication `--include`
+values are repeatable or comma-separated; use `--option key=value` for other
+documented Asana duplication options.
 ## Attachment commands
 
 ```sh
