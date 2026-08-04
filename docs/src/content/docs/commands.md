@@ -23,7 +23,7 @@ asana-cli list-workspaces [pagination options] [--opt-fields FIELDS]
 asana-cli list-projects --workspace-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli list-project-tasks --project-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli list-tag-tasks --tag-gid GID [pagination options] [--opt-fields FIELDS]
-asana-cli search-tasks --workspace-gid GID [search and pagination options]
+asana-cli search-tasks --workspace-gid GID [search options]
 asana-cli get-task --task-gid GID [--opt-fields FIELDS]
 asana-cli list-task-stories --task-gid GID [pagination options]
 asana-cli list-subtasks --task-gid GID [pagination options]
@@ -31,10 +31,51 @@ asana-cli list-dependencies --task-gid GID [pagination options]
 asana-cli list-dependents --task-gid GID [pagination options]
 ```
 
-`search-tasks` accepts `--text`, `--assignee`, `--completed`, `--limit`, and
-`--opt-fields`. The `--completed` filter is tri-state: it is omitted unless you
+`search-tasks` accepts the common filters below. Repeatable filters are joined
+as comma-separated Asana query values; the legacy `--assignee` flag remains an
+alias for `--assignee-any`.
+
+| Filter | Flags | Asana parameter |
+| --- | --- | --- |
+| Text | `--text` | `text` |
+| Assignee | `--assignee-any`, `--assignee-not` | `assignee.any`, `assignee.not` |
+| Project | `--project-any`, `--project-not` | `projects.any`, `projects.not` |
+| Section | `--section-any`, `--section-not` | `sections.any`, `sections.not` |
+| Tag | `--tag-any`, `--tag-not` | `tags.any`, `tags.not` |
+| Team/follower | `--team-any`, `--follower-any` | `teams.any`, `followers.any` |
+| Completion | `--completed` | `completed` |
+| Due/start dates | `--due-on`, `--due-before`, `--due-after`, `--start-before`, `--start-after` | `due_on`, `due_on.before`, `due_on.after`, `start_on.before`, `start_on.after` |
+| Timestamps | `--created-{before,after}`, `--modified-{before,after}`, `--completed-{before,after}` | `created_at.*`, `modified_at.*`, `completed_at.*` |
+| Ordering | `--sort-by`, `--sort-ascending` | `sort_by`, `sort_ascending` |
+| Task subtype | `--resource-subtype` | `resource_subtype` |
+
+Date-only values use `YYYY-MM-DD`; timestamp values use RFC 3339. Known sort
+values are `due_date`, `created_at`, `completed_at`, `likes`, `relevance`, and
+`modified_at`. Resource subtypes are `default_task`, `milestone`, `approval`,
+or `custom`. The `--completed` filter is tri-state: it is omitted unless you
 explicitly pass `--completed=true` or `--completed=false`. Search may require a
 premium Asana workspace.
+
+For parameters not covered by a first-class flag, use repeatable `--query`
+values. Query keys are preserved exactly and values are URL encoded:
+
+```sh
+# overdue open tasks in a project
+asana-cli search-tasks --workspace-gid WORKSPACE --project-any PROJECT \
+  --completed=false --due-before 2026-08-31 --sort-by due_date
+
+# recently modified tasks matching a custom field
+asana-cli search-tasks --workspace-gid WORKSPACE \
+  --query 'custom_fields.111.value=222' \
+  --query 'modified_at.after=2026-08-01T00:00:00Z'
+```
+
+`--query` cannot override `limit` or `offset`. Conflicting duplicate scalar
+keys are rejected, while documented list keys are combined as comma-separated
+values. First-class filters and `--query` compose in one request.
+
+Unlike collection endpoints, task search accepts one page only (up to 100
+results) and does not support `--offset`, `--all`, or `--max-pages` continuation.
 
 ## Attachment commands
 
@@ -121,7 +162,7 @@ commands and run them only when explicitly requested.
 
 ## Pagination
 
-Every list/search command accepts:
+Collection commands accept:
 
 - `--limit N` — maximum items (default 20, or 100 for project/tag tasks).
 - `--all` — follow pages until `next_page` is absent. This cannot be combined
@@ -130,9 +171,10 @@ Every list/search command accepts:
 - `--max-pages N` — positive safety bound; the default is 10. `--all` is
   unlimited unless `--max-pages` is explicitly supplied.
 
-Requests use a page size of 50. JSON responses include `pagination` metadata;
-when traversal stops with another page available, `truncated` is true and the
-next offset/path is included. Human output says when results are truncated.
+Task search is an exception: it accepts one request page with `--limit` from 1
+through 100 and has no offset or continuation flags. JSON responses from
+collection commands include pagination metadata; human output says when
+collection results are truncated.
 
 ## Retries
 
