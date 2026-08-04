@@ -123,9 +123,18 @@ func querySuffix(q url.Values) string {
 
 // requestData performs a request and unwraps the top-level "data" field.
 func requestData(ctx context.Context, c *asana.Client, method, path string, body any) (json.RawMessage, error) {
+	return requestDataAllowEmpty(ctx, c, method, path, body, false)
+}
+
+// requestDataAllowEmpty unwraps Asana's data envelope and optionally accepts a
+// successful empty response, which is common for relationship/ordering calls.
+func requestDataAllowEmpty(ctx context.Context, c *asana.Client, method, path string, body any, allowEmpty bool) (json.RawMessage, error) {
 	raw, err := c.Request(ctx, method, path, body)
 	if err != nil {
 		return nil, err
+	}
+	if allowEmpty && len(strings.TrimSpace(string(raw))) == 0 {
+		return nil, nil
 	}
 	var env struct {
 		Data json.RawMessage `json:"data"`

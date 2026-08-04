@@ -142,6 +142,22 @@ func TestPaginateFollowsNextPageAndCaps(t *testing.T) {
 	}
 }
 
+func TestPaginateUsesRemainingLimit(t *testing.T) {
+	var gotLimit int
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotLimit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"gid":"1"}],"next_page":null}`))
+	})
+	got, err := c.Paginate(context.Background(), "/items?limit=50", 20, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotLimit != 20 || len(got.Items) != 1 {
+		t.Errorf("request limit=%d result=%+v, want limit 20", gotLimit, got)
+	}
+}
+
 func TestPaginateMaxPages(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
