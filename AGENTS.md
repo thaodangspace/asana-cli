@@ -25,6 +25,7 @@ cli/                           # Cobra command tree (one file per subcommand)
   me.go list_workspaces.go list_projects.go search_tasks.go
   get_task.go list_task_stories.go comment_on_task.go update_task.go
   list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go api.go
+  task_graph.go                  #   subtasks, parents, dependencies, projects, tags, followers
 docs/                           # Astro/Starlight static documentation site
 ```
 
@@ -44,8 +45,9 @@ docs/                           # Astro/Starlight static documentation site
   Constants `pageSize` / `maxPages` in `run.go`.
 - **Tri-state flags:** detect explicit set with `cmd.Flags().Changed(name)`
   (see `--completed` in `search_tasks.go`).
-- **Writes:** `comment-on-task` (`POST /tasks/{gid}/stories`) and `update-task`
-  (`PUT /tasks/{gid}`). `update-task` builds its `{"data":{...}}` body from only
+- **Writes:** `comment-on-task` (`POST /tasks/{gid}/stories`), task lifecycle
+  commands, and `task_graph.go` relationship endpoints are one-shot mutations.
+  `update-task` (`PUT /tasks/{gid}`). `update-task` builds its `{"data":{...}}` body from only
   the field flags that were `Changed()`; passing an empty string to `--notes`,
   `--due-on`, or `--assignee` sends JSON `null` to clear the field, `--name` may
   not be empty, and at least one field flag is required (else usage error).

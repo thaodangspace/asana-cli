@@ -26,6 +26,9 @@ asana-cli list-tag-tasks --tag-gid GID [pagination options] [--opt-fields FIELDS
 asana-cli search-tasks --workspace-gid GID [search and pagination options]
 asana-cli get-task --task-gid GID [--opt-fields FIELDS]
 asana-cli list-task-stories --task-gid GID [pagination options]
+asana-cli list-subtasks --task-gid GID [pagination options]
+asana-cli list-dependencies --task-gid GID [pagination options]
+asana-cli list-dependents --task-gid GID [pagination options]
 ```
 
 `search-tasks` accepts `--text`, `--assignee`, `--completed`, `--limit`, and
@@ -77,6 +80,14 @@ asana-cli update-task --task-gid GID --name "New name" --due-on 2026-07-15
 asana-cli update-task --task-gid GID --assignee me --notes "Updated"
 asana-cli delete-task --task-gid GID --yes
 asana-cli duplicate-task --task-gid GID --name "Copy" --include subtasks,dependencies
+
+# Task graph relationships
+asana-cli create-subtask --task-gid GID --name "Write release notes" --assignee me
+asana-cli set-task-parent --task-gid CHILD --parent-task-gid PARENT
+asana-cli add-dependency --task-gid TASK --dependency-task-gid BLOCKER
+asana-cli add-task-to-project --task-gid TASK --project-gid PROJECT --section-gid SECTION
+asana-cli add-tag-to-task --task-gid TASK --tag-gid TAG
+asana-cli add-task-followers --task-gid TASK --follower me --follower USER
 ```
 
 `create-task` requires `--name` and at least one task context: workspace,
@@ -99,7 +110,10 @@ cannot be supplied together (`--due-on` with `--due-at`, or `--start-on` with
 values. Project, section, and parent changes use Asana's dedicated relationship
 endpoints; project replacement first reads existing memberships. Empty notes,
 dates, assignees, followers, projects, and parent values clear those fields
-where Asana supports clearing them. `delete-task` requires
+where Asana supports clearing them. Task graph mutations use dedicated Asana
+relationship endpoints; project placement flags `--insert-before` and
+`--insert-after` are mutually exclusive, and follower flags preserve caller
+order. `delete-task` requires
 `--confirm` or `--yes` and always returns a stable success envelope with
 `data: null`. `duplicate-task` returns the asynchronous duplication job,
 not the eventual task. Treat all of these commands, plus `add-attachment`, as mutating

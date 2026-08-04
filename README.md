@@ -104,6 +104,13 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 mutable field. Supports explicit clearing and tri-state booleans. |
 | `delete-task` | `DELETE /tasks/{gid}` | `--task-gid` and `--confirm` or `--yes`. Returns `data: null`. |
 | `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. Returns an asynchronous job. |
+| `list-subtasks`, `list-dependencies`, `list-dependents` | `GET /tasks/{gid}/{relationship}` | `--task-gid`, pagination flags, and `--opt-fields`. |
+| `create-subtask` | `POST /tasks/{gid}/subtasks` | `--task-gid`, `--name`, and common task fields. |
+| `set-task-parent`, `remove-task-parent` | `POST /tasks/{gid}/setParent` | Set or clear a task parent. |
+| `add-dependency`, `remove-dependency` | `POST /tasks/{gid}/{operation}` | `--task-gid` and `--dependency-task-gid`. |
+| `add-task-to-project`, `remove-task-from-project` | `POST /tasks/{gid}/{operation}` | Project membership; add supports section and mutually exclusive positioning flags. |
+| `add-tag-to-task`, `remove-tag-from-task` | `POST /tasks/{gid}/{operation}` | `--task-gid` and `--tag-gid`. |
+| `add-task-followers`, `remove-task-followers` | `POST /tasks/{gid}/{operation}` | Repeatable ordered `--follower` user GIDs or `me`. |
 | `api` | arbitrary relative API path | `METHOD PATH`, repeatable `--query`, optional JSON `--data`/`@FILE`, and `--raw-response`. Advanced escape hatch. |
 
 All list/search commands support `--limit` (the maximum number of items),
@@ -229,6 +236,10 @@ asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
 asana-cli update-task --task-gid 12345 --assignee me --notes "Reassigned."
 asana-cli delete-task --task-gid 12345 --yes
 asana-cli duplicate-task --task-gid 12345 --name "Copy of Ship v2" --include subtasks,dependencies
+asana-cli create-subtask --task-gid 12345 --name "Write release notes" --assignee me
+asana-cli add-dependency --task-gid 12345 --dependency-task-gid 67890
+asana-cli add-task-to-project --task-gid 12345 --project-gid 67890 --section-gid 999
+asana-cli add-task-followers --task-gid 12345 --follower me --follower 67890
 asana-cli update-task --task-gid 12345 --due-on ""   # clears the due date
 asana-cli api GET /teams/123/memberships --query 'limit=50'
 ```
