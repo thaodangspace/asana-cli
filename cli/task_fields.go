@@ -189,6 +189,58 @@ func addCustomFields(data map[string]any, assignments []string) error {
 	return nil
 }
 
+// commonTaskFields contains the task fields shared by task creation commands.
+// Keeping the parsing here prevents create-task and create-subtask from
+// drifting apart as Asana adds task field options.
+type commonTaskFields struct {
+	notes        string
+	htmlNotes    string
+	completed    bool
+	dueOn        string
+	dueAt        string
+	startOn      string
+	startAt      string
+	assignee     string
+	followers    []string
+	customFields []string
+}
+
+func (f *commonTaskFields) addFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.notes, "notes", "", "plain-text task description")
+	cmd.Flags().StringVar(&f.htmlNotes, "html-notes", "", "HTML task description (mutually exclusive with --notes)")
+	cmd.Flags().BoolVar(&f.completed, "completed", false, "initial completion state (sent only when set)")
+	cmd.Flags().StringVar(&f.dueOn, "due-on", "", "due date YYYY-MM-DD")
+	cmd.Flags().StringVar(&f.dueAt, "due-at", "", "due date-time in RFC 3339")
+	cmd.Flags().StringVar(&f.startOn, "start-on", "", "start date YYYY-MM-DD")
+	cmd.Flags().StringVar(&f.startAt, "start-at", "", "start date-time in RFC 3339")
+	cmd.Flags().StringVar(&f.assignee, "assignee", "", "assignee user GID or me")
+	cmd.Flags().StringArrayVar(&f.followers, "follower", nil, "follower user GID (repeatable; empty value clears followers)")
+	cmd.Flags().StringArrayVar(&f.customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; use json: for typed JSON)")
+}
+
+func (f *commonTaskFields) addTo(cmd *cobra.Command, data map[string]any) error {
+	if err := addNotes(data, cmd, f.notes, f.htmlNotes); err != nil {
+		return err
+	}
+	if cmd.Flags().Changed("completed") {
+		data["completed"] = f.completed
+	}
+	if err := validateStartDependency(cmd); err != nil {
+		return err
+	}
+	if err := addDatePair(cmd, data, "due-on", f.dueOn, "due_on", "due-at", f.dueAt, "due_at"); err != nil {
+		return err
+	}
+	if err := addDatePair(cmd, data, "start-on", f.startOn, "start_on", "start-at", f.startAt, "start_at"); err != nil {
+		return err
+	}
+	addAssignee(data, cmd, f.assignee)
+	if err := addFollowers(data, cmd, f.followers); err != nil {
+		return err
+	}
+	return addCustomFields(data, f.customFields)
+}
+
 func requireNonEmptyName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
