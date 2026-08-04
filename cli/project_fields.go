@@ -11,7 +11,7 @@ import (
 
 // addProjectFields adds only explicitly supplied project fields. Empty values
 // for nullable fields are encoded as JSON null so callers can clear them.
-func addProjectFields(data map[string]any, cmd *cobra.Command, name, notes, htmlNotes, color, owner string, archived, public bool, defaultView, dueOn, dueAt, startOn, startAt string, members, followers []string) error {
+func addProjectFields(data map[string]any, cmd *cobra.Command, name, notes, htmlNotes, color, owner string, archived, public bool, defaultView, dueOn, dueAt, startOn string, members, followers []string) error {
 	if cmd.Flags().Changed("name") {
 		value, err := requireNonEmptyName(name)
 		if err != nil {
@@ -63,8 +63,12 @@ func addProjectFields(data map[string]any, cmd *cobra.Command, name, notes, html
 	if err := addDatePair(cmd, data, "due-on", dueOn, "due_on", "due-at", dueAt, "due_at"); err != nil {
 		return err
 	}
-	if err := addDatePair(cmd, data, "start-on", startOn, "start_on", "start-at", startAt, "start_at"); err != nil {
-		return err
+	if cmd.Flags().Changed("start-on") {
+		value, err := validateDate(startOn, "start-on")
+		if err != nil {
+			return err
+		}
+		data["start_on"] = value
 	}
 	if err := addProjectUserList(data, cmd, "member", "members", members); err != nil {
 		return err
@@ -81,12 +85,11 @@ func appendProjectSearchValue(q url.Values, key, value string) {
 	}
 }
 
-func validateProjectSearchDates(dueBefore, dueAfter, startBefore, startAfter, createdBefore, createdAfter, modifiedBefore, modifiedAfter string) error {
+func validateProjectSearchDates(dueBefore, dueAfter, startBefore, startAfter, createdBefore, createdAfter string) error {
 	for _, item := range []struct{ name, value, layout string }{
 		{"due-before", dueBefore, "2006-01-02"}, {"due-after", dueAfter, "2006-01-02"},
 		{"start-before", startBefore, "2006-01-02"}, {"start-after", startAfter, "2006-01-02"},
 		{"created-before", createdBefore, time.RFC3339}, {"created-after", createdAfter, time.RFC3339},
-		{"modified-before", modifiedBefore, time.RFC3339}, {"modified-after", modifiedAfter, time.RFC3339},
 	} {
 		if strings.TrimSpace(item.value) == "" {
 			continue
@@ -97,7 +100,7 @@ func validateProjectSearchDates(dueBefore, dueAfter, startBefore, startAfter, cr
 	}
 	for _, item := range []struct{ name, after, before, layout string }{
 		{"due", dueAfter, dueBefore, "2006-01-02"}, {"start", startAfter, startBefore, "2006-01-02"},
-		{"created", createdAfter, createdBefore, time.RFC3339}, {"modified", modifiedAfter, modifiedBefore, time.RFC3339},
+		{"created", createdAfter, createdBefore, time.RFC3339},
 	} {
 		if strings.TrimSpace(item.after) == "" || strings.TrimSpace(item.before) == "" {
 			continue
@@ -165,24 +168,6 @@ func addProjectUserList(data map[string]any, cmd *cobra.Command, flag, key strin
 		result = append(result, value)
 	}
 	data[key] = result
-	return nil
-}
-
-func addProjectLocation(data map[string]any, cmd *cobra.Command, workspace, team string) error {
-	if cmd.Flags().Changed("workspace-gid") {
-		if strings.TrimSpace(workspace) == "" {
-			data["workspace"] = nil
-		} else {
-			data["workspace"] = strings.TrimSpace(workspace)
-		}
-	}
-	if cmd.Flags().Changed("team-gid") {
-		if strings.TrimSpace(team) == "" {
-			data["team"] = nil
-		} else {
-			data["team"] = strings.TrimSpace(team)
-		}
-	}
 	return nil
 }
 

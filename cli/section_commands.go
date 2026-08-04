@@ -199,31 +199,39 @@ func positionData(cmd *cobra.Command, before, after, beforeFlag, afterFlag, befo
 }
 
 func newMoveSectionCommand() *cobra.Command {
-	var section, before, after string
-	cmd := &cobra.Command{Use: "move-section", Short: "Move an Asana section", RunE: func(cmd *cobra.Command, args []string) error {
+	var project, section, before, after string
+	cmd := &cobra.Command{Use: "move-section", Short: "Move an Asana section within a project", RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 0 {
 			return usageErrorf("move-section does not accept positional arguments")
 		}
-		id, err := requireFlag("section-gid", section)
+		projectID, err := requireFlag("project-gid", project)
 		if err != nil {
 			return err
+		}
+		sectionID, err := requireFlag("section-gid", section)
+		if err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("before-section-gid") && !cmd.Flags().Changed("after-section-gid") {
+			return usageErrorf("one of --before-section-gid or --after-section-gid is required")
 		}
 		data, err := positionData(cmd, before, after, "before-section-gid", "after-section-gid", "before_section", "after_section")
 		if err != nil {
 			return err
 		}
+		data["section"] = sectionID
 		c, _, err := buildClient()
 		if err != nil {
 			return err
 		}
 		ctx, cancel := withTimeout(cmd)
 		defer cancel()
-		raw, err := requestDataAllowEmpty(ctx, c, http.MethodPost, "/sections/"+asana.EncodePathSegment(id)+"/insert", map[string]any{"data": data}, true)
-		if err != nil {
+		if _, err := requestDataAllowEmpty(ctx, c, http.MethodPost, "/projects/"+asana.EncodePathSegment(projectID)+"/sections/insert", map[string]any{"data": data}, true); err != nil {
 			return err
 		}
-		return writeSuccess(cmd.OutOrStdout(), raw, opts.human, "Moved section: "+summarizeSection(raw))
+		return writeSuccess(cmd.OutOrStdout(), nil, opts.human, "Moved section: "+sectionID)
 	}}
+	cmd.Flags().StringVar(&project, "project-gid", "", "Asana project GID (required)")
 	cmd.Flags().StringVar(&section, "section-gid", "", "Asana section GID (required)")
 	cmd.Flags().StringVar(&before, "before-section-gid", "", "place before this section")
 	cmd.Flags().StringVar(&after, "after-section-gid", "", "place after this section")

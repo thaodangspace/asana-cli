@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,15 +15,17 @@ import (
 
 type projectFlags struct {
 	name, workspace, team, notes, htmlNotes, color, defaultView string
-	dueOn, dueAt, startOn, startAt, owner                       string
+	dueOn, dueAt, startOn, owner                                string
 	archived, public                                            bool
 	members, followers                                          []string
 }
 
-func (f *projectFlags) bind(cmd *cobra.Command) {
+func (f *projectFlags) bind(cmd *cobra.Command, create bool) {
 	cmd.Flags().StringVar(&f.name, "name", "", "project name")
-	cmd.Flags().StringVar(&f.workspace, "workspace-gid", "", "Asana workspace GID")
-	cmd.Flags().StringVar(&f.team, "team-gid", "", "Asana team GID")
+	if create {
+		cmd.Flags().StringVar(&f.workspace, "workspace-gid", "", "Asana workspace GID")
+		cmd.Flags().StringVar(&f.team, "team-gid", "", "Asana team GID")
+	}
 	cmd.Flags().StringVar(&f.notes, "notes", "", "plain-text project description; empty clears it")
 	cmd.Flags().StringVar(&f.htmlNotes, "html-notes", "", "HTML project description; empty clears it")
 	cmd.Flags().StringVar(&f.color, "color", "", "project color; empty clears it")
@@ -32,7 +35,6 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.dueOn, "due-on", "", "due date YYYY-MM-DD; empty clears it")
 	cmd.Flags().StringVar(&f.dueAt, "due-at", "", "due date-time RFC 3339; empty clears it")
 	cmd.Flags().StringVar(&f.startOn, "start-on", "", "start date YYYY-MM-DD; empty clears it")
-	cmd.Flags().StringVar(&f.startAt, "start-at", "", "start date-time RFC 3339; empty clears it")
 	cmd.Flags().StringVar(&f.owner, "owner", "", "owner user GID; empty clears it")
 	cmd.Flags().StringArrayVar(&f.members, "member", nil, "project member user GID (repeatable; empty clears members)")
 	cmd.Flags().StringArrayVar(&f.members, "members", nil, "alias for --member")
@@ -41,7 +43,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 }
 
 func addBoundProjectFields(data map[string]any, cmd *cobra.Command, f *projectFlags) error {
-	return addProjectFields(data, cmd, f.name, f.notes, f.htmlNotes, f.color, f.owner, f.archived, f.public, f.defaultView, f.dueOn, f.dueAt, f.startOn, f.startAt, f.members, f.followers)
+	return addProjectFields(data, cmd, f.name, f.notes, f.htmlNotes, f.color, f.owner, f.archived, f.public, f.defaultView, f.dueOn, f.dueAt, f.startOn, f.members, f.followers)
 }
 
 func newGetProjectCommand() *cobra.Command {
@@ -114,7 +116,7 @@ func newCreateProjectCommand() *cobra.Command {
 		}
 		return writeSuccess(cmd.OutOrStdout(), raw, opts.human, "Created project: "+summarizeProject(raw))
 	}}
-	f.bind(cmd)
+	f.bind(cmd, true)
 	return cmd
 }
 
@@ -133,9 +135,6 @@ func newUpdateProjectCommand() *cobra.Command {
 		if err := addBoundProjectFields(data, cmd, &f); err != nil {
 			return err
 		}
-		if err := addProjectLocation(data, cmd, f.workspace, f.team); err != nil {
-			return err
-		}
 		if len(data) == 0 {
 			return usageErrorf("at least one project field flag must be set")
 		}
@@ -152,7 +151,7 @@ func newUpdateProjectCommand() *cobra.Command {
 		return writeSuccess(cmd.OutOrStdout(), raw, opts.human, "Updated project: "+summarizeProject(raw))
 	}}
 	cmd.Flags().StringVar(&gid, "project-gid", "", "Asana project GID (required)")
-	f.bind(cmd)
+	f.bind(cmd, false)
 	return cmd
 }
 
@@ -250,46 +249,39 @@ func newDuplicateProjectCommand() *cobra.Command {
 
 func newSearchProjectsCommand() *cobra.Command {
 	var workspace, optFields string
-	var archived bool
-	var owner, team, member, createdBy string
+	var owner, team, member string
+	var completed bool
 	var dueBefore, dueAfter, startBefore, startAfter string
-	var createdBefore, createdAfter, modifiedBefore, modifiedAfter string
+	var createdBefore, createdAfter string
 	var sortBy string
 	var sortAscending bool
 	var queries []string
-	var pagination paginationOptions
+	var limit int
 	cmd := &cobra.Command{Use: "search-projects", Short: "Search projects in an Asana workspace", RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 0 {
 			return usageErrorf("search-projects does not accept positional arguments")
 		}
-		limit, err := pagination.validate(cmd, 100)
-		if err != nil {
-			return err
+		if limit < 1 || limit > 100 {
+			return usageErrorf("--limit must be between 1 and 100, got %d", limit)
 		}
-		if err := validateProjectSearchDates(dueBefore, dueAfter, startBefore, startAfter, createdBefore, createdAfter, modifiedBefore, modifiedAfter); err != nil {
+		if err := validateProjectSearchDates(dueBefore, dueAfter, startBefore, startAfter, createdBefore, createdAfter); err != nil {
 			return err
 		}
 		q := url.Values{}
-		q.Set("limit", strconv.Itoa(pageSize))
-		if pagination.offset != "" {
-			q.Set("offset", pagination.offset)
-		}
+		q.Set("limit", strconv.Itoa(limit))
 		appendOptFields(q, optFields)
-		if cmd.Flags().Changed("archived") {
-			q.Set("archived", strconv.FormatBool(archived))
+		appendProjectSearchValue(q, "owner.any", owner)
+		appendProjectSearchValue(q, "teams.any", team)
+		appendProjectSearchValue(q, "members.any", member)
+		if cmd.Flags().Changed("completed") {
+			q.Set("completed", strconv.FormatBool(completed))
 		}
-		appendProjectSearchValue(q, "owner", owner)
-		appendProjectSearchValue(q, "team", team)
-		appendProjectSearchValue(q, "members", member)
-		appendProjectSearchValue(q, "created_by", createdBy)
 		appendProjectSearchValue(q, "due_on.before", dueBefore)
 		appendProjectSearchValue(q, "due_on.after", dueAfter)
 		appendProjectSearchValue(q, "start_on.before", startBefore)
 		appendProjectSearchValue(q, "start_on.after", startAfter)
 		appendProjectSearchValue(q, "created_at.before", createdBefore)
 		appendProjectSearchValue(q, "created_at.after", createdAfter)
-		appendProjectSearchValue(q, "modified_at.before", modifiedBefore)
-		appendProjectSearchValue(q, "modified_at.after", modifiedAfter)
 		if strings.TrimSpace(sortBy) != "" {
 			q.Set("sort_by", strings.TrimSpace(sortBy))
 		}
@@ -310,30 +302,32 @@ func newSearchProjectsCommand() *cobra.Command {
 		ctx, cancel := withTimeout(cmd)
 		defer cancel()
 		path := "/workspaces/" + asana.EncodePathSegment(ws) + "/projects/search?" + q.Encode()
-		result, err := c.Paginate(ctx, path, limit, paginationPageLimit(cmd, &pagination))
+		data, err := requestData(ctx, c, http.MethodGet, path, nil)
 		if err != nil {
 			return err
 		}
+		items := make([]json.RawMessage, 0)
+		if err := json.Unmarshal(data, &items); err != nil {
+			return fmt.Errorf("decode project search response: %w", err)
+		}
+		result := asana.PageResult{Items: items, PagesFetched: 1}
 		return writeSuccessWithPagination(cmd.OutOrStdout(), result.Items, pageMetadata(result), opts.human, humanList(result.Items, summarizeProject, "No projects found."))
 	}}
 	cmd.Flags().StringVar(&workspace, "workspace-gid", "", "Asana workspace GID (defaults to ASANA_DEFAULT_WORKSPACE)")
-	cmd.Flags().BoolVar(&archived, "archived", false, "filter by archived state (omitted unless set)")
-	cmd.Flags().StringVar(&owner, "owner", "", "owner GID")
-	cmd.Flags().StringVar(&team, "team", "", "team GID")
-	cmd.Flags().StringVar(&member, "member", "", "member GID")
-	cmd.Flags().StringVar(&createdBy, "created-by", "", "creator user GID")
+	cmd.Flags().StringVar(&owner, "owner", "", "owner GID (sent as owner.any)")
+	cmd.Flags().StringVar(&team, "team", "", "team GID (sent as teams.any)")
+	cmd.Flags().StringVar(&member, "member", "", "member GID (sent as members.any)")
+	cmd.Flags().BoolVar(&completed, "completed", false, "filter by completion state (omitted unless set)")
 	cmd.Flags().StringVar(&dueBefore, "due-before", "", "due date upper bound YYYY-MM-DD")
 	cmd.Flags().StringVar(&dueAfter, "due-after", "", "due date lower bound YYYY-MM-DD")
 	cmd.Flags().StringVar(&startBefore, "start-before", "", "start date upper bound YYYY-MM-DD")
 	cmd.Flags().StringVar(&startAfter, "start-after", "", "start date lower bound YYYY-MM-DD")
 	cmd.Flags().StringVar(&createdBefore, "created-before", "", "creation time upper bound RFC 3339")
 	cmd.Flags().StringVar(&createdAfter, "created-after", "", "creation time lower bound RFC 3339")
-	cmd.Flags().StringVar(&modifiedBefore, "modified-before", "", "modification time upper bound RFC 3339")
-	cmd.Flags().StringVar(&modifiedAfter, "modified-after", "", "modification time lower bound RFC 3339")
 	cmd.Flags().StringVar(&sortBy, "sort-by", "", "sort by due_date, created_at, or modified_at")
 	cmd.Flags().BoolVar(&sortAscending, "sort-ascending", false, "sort in ascending order")
 	cmd.Flags().StringArrayVar(&queries, "query", nil, "advanced project query key=value (repeatable)")
-	pagination.addFlags(cmd, 20)
+	cmd.Flags().IntVar(&limit, "limit", 20, "maximum results to return (1-100)")
 	cmd.Flags().StringVar(&optFields, "opt-fields", "", "comma-separated Asana opt_fields")
 	return cmd
 }

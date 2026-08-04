@@ -682,6 +682,20 @@ func withOffset(pathOrURL, offset string) string {
 	return u.String()
 }
 
+func withLimit(pathOrURL string, limit int) string {
+	if limit <= 0 {
+		return pathOrURL
+	}
+	u, err := url.Parse(pathOrURL)
+	if err != nil {
+		return pathOrURL
+	}
+	q := u.Query()
+	q.Set("limit", strconv.Itoa(limit))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 func nextPage(current string, p *struct {
 	Offset string `json:"offset"`
 	Path   string `json:"path"`
@@ -707,11 +721,21 @@ func nextPage(current string, p *struct {
 // intentional or safety-bound partial results as truncated and exposes a
 // resumable next path/offset when Asana supplied one.
 func (c *Client) Paginate(ctx context.Context, pathOrURL string, limit, maxPages int) (PageResult, error) {
+	const requestPageSize = 50
 	result := PageResult{Items: make([]json.RawMessage, 0)}
 	next := pathOrURL
 
 	for next != "" && (limit <= 0 || len(result.Items) < limit) && (maxPages <= 0 || result.PagesFetched < maxPages) {
-		raw, err := c.Request(ctx, http.MethodGet, next, nil)
+		requestPath := next
+		if limit > 0 {
+			remaining := limit - len(result.Items)
+			requestSize := requestPageSize
+			if remaining < requestSize {
+				requestSize = remaining
+			}
+			requestPath = withLimit(next, requestSize)
+		}
+		raw, err := c.Request(ctx, http.MethodGet, requestPath, nil)
 		if err != nil {
 			return PageResult{}, err
 		}
@@ -722,7 +746,7 @@ func (c *Client) Paginate(ctx context.Context, pathOrURL string, limit, maxPages
 
 		result.Items = append(result.Items, p.Data...)
 		result.PagesFetched++
-		next, result.NextOffset = nextPage(next, p.NextPage)
+		next, result.NextOffset = nextPage(requestPath, p.NextPage)
 		hasNext := next != ""
 
 		if limit > 0 && len(result.Items) >= limit {

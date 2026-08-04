@@ -29,7 +29,7 @@ func TestListTaskAttachmentsCommand(t *testing.T) {
 	if got := gotQuery.Get("parent"); got != "42" {
 		t.Errorf("parent query = %q", got)
 	}
-	if got := gotQuery.Get("limit"); got != "50" {
+	if got := gotQuery.Get("limit"); got != "20" {
 		t.Errorf("limit query = %q", got)
 	}
 	if got := gotQuery.Get("opt_fields"); got != "name,download_url" {

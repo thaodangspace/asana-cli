@@ -22,7 +22,7 @@ asana-cli me [--opt-fields FIELDS]
 asana-cli list-workspaces [pagination options] [--opt-fields FIELDS]
 asana-cli list-projects --workspace-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli get-project --project-gid GID [--opt-fields FIELDS]
-asana-cli search-projects --workspace-gid GID [filters] [pagination options]
+asana-cli search-projects --workspace-gid GID [filters] [--limit N]
 asana-cli list-team-projects --team-gid GID [pagination options]
 asana-cli list-sections --project-gid GID [pagination options]
 asana-cli get-section --section-gid GID [--opt-fields FIELDS]
@@ -90,7 +90,7 @@ asana-cli create-project --workspace-gid WORKSPACE --name "Launch v2" --public
 asana-cli update-project --project-gid PROJECT --archived=true --due-on 2026-12-31
 asana-cli duplicate-project --project-gid PROJECT --include tasks,members
 asana-cli create-section --project-gid PROJECT --name "In progress"
-asana-cli move-section --section-gid SECTION --before-section-gid OTHER
+asana-cli move-section --project-gid PROJECT --section-gid SECTION --before-section-gid OTHER
 asana-cli add-task-to-section --section-gid SECTION --task-gid TASK --after-task-gid OTHER
 asana-cli delete-section --section-gid SECTION --yes
 asana-cli delete-project --project-gid PROJECT --yes
@@ -98,12 +98,16 @@ asana-cli delete-project --project-gid PROJECT --yes
 
 Project updates use only explicitly supplied fields; optional booleans are
 tri-state and empty nullable values clear those fields. Project and section
-collections support `--limit`, `--all`, `--offset`, and `--max-pages`.
+collections support `--limit`, `--all`, `--offset`, and `--max-pages`. Project
+search is single-page: use `--limit` (1-100), and `--offset`, `--all`, and
+`--max-pages` are not supported. Its first-class `--owner`, `--team`, and
+`--member` filters map to `owner.any`, `teams.any`, and `members.any`; use
+`--completed` and repeatable `--query key=value` for other search parameters.
 `--before-section-gid`/`--after-section-gid` and
-`--before-task-gid`/`--after-task-gid` are mutually exclusive. Project search
-also accepts repeatable `--query key=value` values. Duplication `--include`
-values are repeatable or comma-separated; use `--option key=value` for other
-documented Asana duplication options.
+`--before-task-gid`/`--after-task-gid` are mutually exclusive. Duplication
+`--include` values are repeatable or comma-separated; use `--option key=value`
+for other documented Asana duplication options.
+
 ## Attachment commands
 
 ```sh
