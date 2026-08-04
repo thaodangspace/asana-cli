@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -15,28 +16,36 @@ import (
 )
 
 // Search query parameters whose API semantics permit more than one value.
-// Keep this list explicit: repeated values for scalar parameters are usually a
-// caller mistake and should not silently change the request.
+// They are represented as one comma-separated query value, as required by
+// Asana's search endpoint. Keep this list explicit: repeated values for scalar
+// parameters are usually a caller mistake and should not silently change the request.
 var searchListQueryKeys = map[string]bool{
-	"assignee.any":     true,
-	"assignee.not":     true,
-	"projects.any":     true,
-	"projects.not":     true,
-	"sections.any":     true,
-	"sections.not":     true,
-	"tags.any":         true,
-	"tags.not":         true,
-	"teams.any":        true,
-	"followers.any":    true,
-	"resource_subtype": true,
+	"assignee.any":  true,
+	"assignee.not":  true,
+	"projects.any":  true,
+	"projects.not":  true,
+	"sections.any":  true,
+	"sections.not":  true,
+	"tags.any":      true,
+	"tags.not":      true,
+	"teams.any":     true,
+	"followers.any": true,
 }
 
 var searchSortValues = map[string]bool{
-	"created_at":  true,
-	"due_date":    true,
-	"likes":       true,
-	"modified_at": true,
-	"name":        true,
+	"due_date":     true,
+	"created_at":   true,
+	"completed_at": true,
+	"likes":        true,
+	"relevance":    true,
+	"modified_at":  true,
+}
+
+var searchResourceSubtypes = map[string]bool{
+	"default_task": true,
+	"milestone":    true,
+	"approval":     true,
+	"custom":       true,
 }
 
 func newSearchTasksCommand() *cobra.Command {
@@ -54,7 +63,7 @@ func newSearchTasksCommand() *cobra.Command {
 		tagNot          []string
 		teamAny         []string
 		followerAny     []string
-		resourceType    []string
+		resourceType    string
 		completed       bool
 		dueOn           string
 		dueBefore       string
@@ -70,16 +79,15 @@ func newSearchTasksCommand() *cobra.Command {
 		sortBy          string
 		sortAscending   bool
 		queries         []string
-		pagination      paginationOptions
+		limit           int
 		optFields       string
 	)
 	cmd := &cobra.Command{
 		Use:   "search-tasks",
 		Short: "Search tasks in an Asana workspace (may require premium access)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			limit, err := pagination.validate(cmd, 100)
-			if err != nil {
-				return err
+			if limit < 1 || limit > 100 {
+				return usageErrorf("--limit must be between 1 and 100, got %d", limit)
 			}
 			if err := validateSearchDates(dueOn, dueBefore, dueAfter, startBefore, startAfter,
 				createdBefore, createdAfter, modifiedBefore, modifiedAfter, completedBefore, completedAfter); err != nil {
@@ -87,28 +95,30 @@ func newSearchTasksCommand() *cobra.Command {
 			}
 			sortValue := strings.TrimSpace(sortBy)
 			if sortValue != "" && !searchSortValues[sortValue] {
-				return usageErrorf("--sort-by must be one of created_at, due_date, likes, modified_at, or name, got %q", sortValue)
+				return usageErrorf("--sort-by must be one of due_date, created_at, completed_at, likes, relevance, or modified_at, got %q", sortValue)
 			}
 
 			q := url.Values{}
-			q.Set("limit", strconv.Itoa(pageSize))
-			if pagination.offset != "" {
-				q.Set("offset", pagination.offset)
-			}
+			q.Set("limit", strconv.Itoa(limit))
 			if v := strings.TrimSpace(text); v != "" {
 				q.Set("text", v)
 			}
-			appendSearchValues(q, "assignee.any", append([]string{assignee}, assigneeAny...), true)
-			appendSearchValues(q, "assignee.not", assigneeNot, true)
-			appendSearchValues(q, "projects.any", projectAny, true)
-			appendSearchValues(q, "projects.not", projectNot, true)
-			appendSearchValues(q, "sections.any", sectionAny, true)
-			appendSearchValues(q, "sections.not", sectionNot, true)
-			appendSearchValues(q, "tags.any", tagAny, true)
-			appendSearchValues(q, "tags.not", tagNot, true)
-			appendSearchValues(q, "teams.any", teamAny, true)
-			appendSearchValues(q, "followers.any", followerAny, true)
-			appendSearchValues(q, "resource_subtype", resourceType, true)
+			appendSearchValues(q, "assignee.any", append([]string{assignee}, assigneeAny...))
+			appendSearchValues(q, "assignee.not", assigneeNot)
+			appendSearchValues(q, "projects.any", projectAny)
+			appendSearchValues(q, "projects.not", projectNot)
+			appendSearchValues(q, "sections.any", sectionAny)
+			appendSearchValues(q, "sections.not", sectionNot)
+			appendSearchValues(q, "tags.any", tagAny)
+			appendSearchValues(q, "tags.not", tagNot)
+			appendSearchValues(q, "teams.any", teamAny)
+			appendSearchValues(q, "followers.any", followerAny)
+			if subtype := strings.TrimSpace(resourceType); subtype != "" {
+				if !searchResourceSubtypes[subtype] {
+					return usageErrorf("--resource-subtype must be one of default_task, milestone, approval, or custom, got %q", subtype)
+				}
+				q.Set("resource_subtype", subtype)
+			}
 			if cmd.Flags().Changed("completed") {
 				q.Set("completed", strconv.FormatBool(completed))
 			}
@@ -144,10 +154,15 @@ func newSearchTasksCommand() *cobra.Command {
 			defer cancel()
 
 			path := "/workspaces/" + asana.EncodePathSegment(workspace) + "/tasks/search?" + q.Encode()
-			result, err := c.Paginate(ctx, path, limit, paginationPageLimit(cmd, &pagination))
+			data, err := requestData(ctx, c, http.MethodGet, path, nil)
 			if err != nil {
 				return err
 			}
+			items := make([]json.RawMessage, 0)
+			if err := json.Unmarshal(data, &items); err != nil {
+				return fmt.Errorf("decode search response: %w", err)
+			}
+			result := asana.PageResult{Items: items, PagesFetched: 1}
 			human := searchHumanText(result.Items, q)
 			return writeSuccessWithPagination(cmd.OutOrStdout(), result.Items, pageMetadata(result), opts.human, human)
 		},
@@ -165,7 +180,7 @@ func newSearchTasksCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&tagNot, "tag-not", nil, "tag GID to exclude (repeatable)")
 	cmd.Flags().StringArrayVar(&teamAny, "team-any", nil, "team GID to include (repeatable)")
 	cmd.Flags().StringArrayVar(&followerAny, "follower-any", nil, "follower GID to include (repeatable)")
-	cmd.Flags().StringArrayVar(&resourceType, "resource-subtype", nil, "task resource subtype (repeatable)")
+	cmd.Flags().StringVar(&resourceType, "resource-subtype", "", "task resource subtype: default_task, milestone, approval, or custom")
 	cmd.Flags().BoolVar(&completed, "completed", false, "filter by completion state (omitted unless set)")
 	cmd.Flags().StringVar(&dueOn, "due-on", "", "due date YYYY-MM-DD")
 	cmd.Flags().StringVar(&dueBefore, "due-before", "", "due date upper bound YYYY-MM-DD")
@@ -184,10 +199,10 @@ func newSearchTasksCommand() *cobra.Command {
 	cmd.Flags().StringVar(&completedAfter, "completed-after", "", "completion time lower bound RFC 3339")
 	cmd.Flags().StringVar(&completedBefore, "completed-at-before", "", "alias for --completed-before")
 	cmd.Flags().StringVar(&completedAfter, "completed-at-after", "", "alias for --completed-after")
-	cmd.Flags().StringVar(&sortBy, "sort-by", "", "sort by created_at, due_date, likes, modified_at, or name")
+	cmd.Flags().StringVar(&sortBy, "sort-by", "", "sort by due_date, created_at, completed_at, likes, relevance, or modified_at")
 	cmd.Flags().BoolVar(&sortAscending, "sort-ascending", false, "sort in ascending order")
 	cmd.Flags().StringArrayVar(&queries, "query", nil, "advanced search query key=value (repeatable)")
-	pagination.addFlags(cmd, 20)
+	cmd.Flags().IntVar(&limit, "limit", 20, "maximum results to return (1-100)")
 	cmd.Flags().StringVar(&optFields, "opt-fields", "", "comma-separated Asana opt_fields")
 	return cmd
 }
@@ -198,17 +213,15 @@ func appendSearchValue(q url.Values, key, value string) {
 	}
 }
 
-func appendSearchValues(q url.Values, key string, values []string, list bool) {
+func appendSearchValues(q url.Values, key string, values []string) {
+	trimmed := make([]string, 0, len(values))
 	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
+		if value = strings.TrimSpace(value); value != "" {
+			trimmed = append(trimmed, value)
 		}
-		if list {
-			q.Add(key, value)
-		} else {
-			q.Set(key, value)
-		}
+	}
+	if len(trimmed) > 0 {
+		q.Set(key, strings.Join(trimmed, ","))
 	}
 }
 
@@ -230,7 +243,15 @@ func mergeSearchQueries(q url.Values, queries []string) error {
 			return usageErrorf("--query cannot override pagination parameter %q; use the corresponding flag", key)
 		}
 		if searchListQueryKeys[key] {
-			q.Add(key, value)
+			value = strings.TrimSpace(value)
+			if value == "" {
+				return usageErrorf("--query value for list parameter %q must not be empty", key)
+			}
+			if existing, ok := q[key]; ok && existing[0] != "" {
+				q.Set(key, existing[0]+","+value)
+			} else {
+				q.Set(key, value)
+			}
 			continue
 		}
 		if existing, ok := q[key]; ok {

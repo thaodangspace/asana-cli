@@ -86,12 +86,12 @@ func TestSearchTasksFirstClassFiltersAndQueries(t *testing.T) {
 		"--due-on", "2026-08-20", "--due-before", "2026-08-31", "--start-after", "2026-08-01",
 		"--created-after", "2026-08-01T00:00:00Z", "--modified-before", "2026-08-31T00:00:00Z",
 		"--completed=true", "--sort-by", "due_date", "--sort-ascending",
-		"--query", "custom_fields.111.value=222")
+		"--query", "custom_fields.111.value=222", "--query", "projects.any=p3")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for key, want := range map[string]string{
-		"assignee.any": "me", "assignee.not": "u3", "projects.any": "p1",
+		"assignee.any": "me,u2", "assignee.not": "u3", "projects.any": "p1,p2,p3",
 		"sections.not": "s1", "tags.any": "tag1", "teams.any": "team1",
 		"followers.any": "u4", "due_on": "2026-08-20", "due_on.before": "2026-08-31",
 		"start_on.after": "2026-08-01", "created_at.after": "2026-08-01T00:00:00Z",
@@ -102,8 +102,8 @@ func TestSearchTasksFirstClassFiltersAndQueries(t *testing.T) {
 			t.Errorf("%s = %q, want %q", key, gotQuery.Get(key), want)
 		}
 	}
-	if got := gotQuery["projects.any"]; len(got) != 2 || got[1] != "p2" {
-		t.Errorf("projects.any = %v, want [p1 p2]", got)
+	if got := gotQuery.Get("projects.any"); got != "p1,p2,p3" {
+		t.Errorf("projects.any = %q, want p1,p2,p3", got)
 	}
 }
 
@@ -128,6 +128,8 @@ func TestSearchTasksValidatesDateRangesAndSort(t *testing.T) {
 	cases := [][]string{
 		{"--due-after", "2026-09-01", "--due-before", "2026-08-01"},
 		{"--created-after", "not-a-time"},
+		{"--sort-by", "name"},
+		{"--resource-subtype", "custom", "--query", "resource_subtype=milestone"},
 		{"--sort-by", "random"},
 	}
 	for _, extra := range cases {
@@ -137,6 +139,40 @@ func TestSearchTasksValidatesDateRangesAndSort(t *testing.T) {
 		if err == nil || exitCodeFor(err) != exitUsage {
 			t.Errorf("args %v: err = %v, want usage error", extra, err)
 		}
+	}
+}
+
+func TestSearchTasksAcceptsDocumentedSortValues(t *testing.T) {
+	for _, sortBy := range []string{"due_date", "created_at", "completed_at", "likes", "relevance", "modified_at"} {
+		t.Run(sortBy, func(t *testing.T) {
+			_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"data":[]}`))
+			}, "search-tasks", "--workspace-gid", "ws1", "--sort-by", sortBy)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestSearchTasksUsesRequestedSinglePageLimit(t *testing.T) {
+	requests := 0
+	var gotLimit string
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		gotLimit = r.URL.Query().Get("limit")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[],"next_page":{"offset":"must-not-follow"}}`))
+	}, "search-tasks", "--workspace-gid", "ws1", "--limit", "75")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if requests != 1 {
+		t.Errorf("requests = %d, want 1", requests)
+	}
+	if gotLimit != "75" {
+		t.Errorf("limit = %q, want 75", gotLimit)
 	}
 }
 

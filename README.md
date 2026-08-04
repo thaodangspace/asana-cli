@@ -92,7 +92,7 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `list-projects` | `GET /workspaces/{ws}/projects` | `--workspace-gid`, pagination flags, `--opt-fields` |
 | `list-project-tasks` | `GET /projects/{project_gid}/tasks` | `--project-gid`, pagination flags, `--opt-fields` |
 | `list-tag-tasks` | `GET /tags/{tag_gid}/tasks` | `--tag-gid`, pagination flags, `--opt-fields` |
-| `search-tasks` | `GET /workspaces/{ws}/tasks/search` | search filters, pagination flags, `--opt-fields` (may require premium) |
+| `search-tasks` | `GET /workspaces/{ws}/tasks/search` | search filters, one-page `--limit` (1-100), `--opt-fields` (may require premium) |
 | `get-task` | `GET /tasks/{gid}` | `--task-gid` (required), `--opt-fields` |
 | `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), pagination flags, `--opt-fields` |
 | `list-task-attachments` | `GET /attachments?parent={task_gid}` | `--task-gid` (required), pagination flags, `--opt-fields` |
@@ -106,20 +106,22 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. Returns an asynchronous job. |
 | `api` | arbitrary relative API path | `METHOD PATH`, repeatable `--query`, optional JSON `--data`/`@FILE`, and `--raw-response`. Advanced escape hatch. |
 
-All list/search commands support `--limit` (the maximum number of items),
-`--all`, `--offset`, and `--max-pages`. `--all` follows pages until Asana
-reports the collection is exhausted; it cannot be combined with an explicitly
-provided `--limit`. By default, existing limits and the ten-page safety bound
-are retained. `--all --max-pages N` provides a bounded full traversal.
-`--offset` resumes from an Asana offset token. `--max-pages` must be positive.
+List commands support `--limit` (the maximum number of items), `--all`,
+`--offset`, and `--max-pages`. `--all` follows pages until Asana reports the
+collection is exhausted; it cannot be combined with an explicitly provided
+`--limit`. By default, existing limits and the ten-page safety bound are
+retained. `--all --max-pages N` provides a bounded full traversal. `--offset`
+resumes from an Asana offset token. `--max-pages` must be positive.
 
-Requests use a page size of 50. `search-tasks` provides first-class text,
-assignee, project, section, tag, team, follower, completion, due/start date,
-timestamp, subtype, and sorting filters. Repeatable filters such as
-`--project-any` preserve repeated Asana query parameters. Use repeatable
-`--query key=value` for custom-field and future search parameters; conflicting
-scalar keys are rejected and `limit`/`offset` cannot be overridden. `--completed`
-is tri-state: omitted entirely unless you pass it (`--completed=true` or
+Collection requests use a page size of 50. `search-tasks` is an exception: it
+accepts one request page with `--limit` from 1 through 100 and has no offset or
+continuation flags. It provides first-class text, assignee, project, section,
+tag, team, follower, completion, due/start date, timestamp, subtype, and
+sorting filters. Repeatable filters such as `--project-any` are joined as
+comma-separated Asana query values. Use repeatable `--query key=value` for
+custom-field and future search parameters; conflicting scalar keys are
+rejected and `limit`/`offset` cannot be overridden. `--completed` is tri-state:
+omitted entirely unless you pass it (`--completed=true` or
 `--completed=false`). Task creation requires `--name` and a workspace, project,
 or parent context. `--project-gid`, `--follower`, and `--custom-field` are repeatable. Custom field scalar values
 are strings by default, preserving numeric Asana GIDs; prefix values with
