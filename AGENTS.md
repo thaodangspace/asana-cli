@@ -24,7 +24,8 @@ cli/                           # Cobra command tree (one file per subcommand)
   output.go                    #   {ok,data} / {ok,error} envelopes, summarizers, humanList
   me.go list_workspaces.go list_projects.go search_tasks.go
   get_task.go list_task_stories.go comment_on_task.go update_task.go
-  list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go api.go
+  list_task_attachments.go list_attachments.go get_attachment.go download_attachment.go
+  add_attachment.go add_attachment_url.go delete_attachment.go api.go
   task_graph.go                  #   subtasks, parents, dependencies, projects, tags, followers
 docs/                           # Astro/Starlight static documentation site
 ```
@@ -60,16 +61,20 @@ docs/                           # Astro/Starlight static documentation site
   calls to relative paths, repeatable encoded `--query` values, validated inline
   JSON or `@file` bodies (up to 10 MiB), and `--raw-response`. Absolute paths and
   custom headers are rejected; empty successful responses render `data: null`.
-- **Attachments:** `list-task-attachments` uses `GET /attachments?parent={task_gid}`;
-  `get-attachment` uses `GET /attachments/{gid}`; `download-attachment` fetches
-  metadata with `opt_fields=gid,name,download_url`, then streams `download_url`
-  via `Client.Download`. Downloads write only to `--output`, refuse overwrite
-  unless `--overwrite`, and remove partial output files on failure.
-  `add-attachment` uploads a local file via `Client.Upload` (multipart/form-data
-  `POST /attachments`): fields `parent`=`--task-gid` and `file` (streamed from
-  `--file`), with `--name` overriding the display/file name (defaults to the
-  file's base name). Missing flags and a nonexistent/unreadable `--file` are
-  usage errors (exit 2). Multipart uploads are one-shot and are never retried.
+- **Attachments:** `list-task-attachments` is the backward-compatible task-only
+  alias for `list-attachments`, which uses `GET /attachments?parent={parent_gid}`
+  for task, project, and project-brief parents. `get-attachment` uses
+  `GET /attachments/{gid}`; `download-attachment` fetches metadata with
+  `opt_fields=gid,name,download_url`, then streams `download_url` via
+  `Client.Download`. Downloads write only to `--output`, refuse overwrite unless
+  `--overwrite`, and remove partial output files on failure. `add-attachment`
+  accepts `--parent-gid` (with deprecated `--task-gid` alias), streams a local
+  file through `Client.Upload` using bounded memory, and supports all parent
+  types. `add-attachment-url` validates HTTPS locally and passes URL fields to
+  Asana without fetching the URL. `delete-attachment` uses DELETE and requires
+  explicit confirmation. Missing flags and a nonexistent/unreadable `--file`
+  are usage errors (exit 2). Multipart uploads are one-shot and are never
+  retried.
 
 ## Testing
 

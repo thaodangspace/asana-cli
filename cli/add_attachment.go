@@ -12,15 +12,24 @@ import (
 
 func newAddAttachmentCommand() *cobra.Command {
 	var (
-		taskGID  string
-		filePath string
-		name     string
+		parentGID  string
+		taskGID    string
+		parentType string
+		filePath   string
+		name       string
 	)
 	cmd := &cobra.Command{
 		Use:   "add-attachment",
-		Short: "Upload a local file as an attachment on an Asana task",
+		Short: "Upload a local file as an attachment",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			gid, err := requireFlag("task-gid", taskGID)
+			if len(args) != 0 {
+				return usageErrorf("add-attachment does not accept positional arguments")
+			}
+			gid, err := resolveAttachmentParent(parentGID, taskGID)
+			if err != nil {
+				return err
+			}
+			typeName, err := validateAttachmentParentType(parentType)
 			if err != nil {
 				return err
 			}
@@ -66,11 +75,13 @@ func newAddAttachmentCommand() *cobra.Command {
 			}
 
 			attachment := parseResource(env.Data)
-			human := fmt.Sprintf("Attached %s (%s) to task %s.", orUnknown(attachment.Name), orUnknown(attachment.GID), gid)
+			human := fmt.Sprintf("Attached %s (%s) to %s.", orUnknown(attachment.Name), orUnknown(attachment.GID), attachmentParentLabel(typeName, gid))
 			return writeSuccess(cmd.OutOrStdout(), env.Data, opts.human, human)
 		},
 	}
-	cmd.Flags().StringVar(&taskGID, "task-gid", "", "Asana task GID to attach the file to (required)")
+	cmd.Flags().StringVar(&parentGID, "parent-gid", "", "Asana parent resource GID (required; use --task-gid for the legacy task-only alias)")
+	cmd.Flags().StringVar(&taskGID, "task-gid", "", "deprecated alias for --parent-gid (task parent only)")
+	addAttachmentParentTypeFlag(cmd, &parentType)
 	cmd.Flags().StringVar(&filePath, "file", "", "path to the local file to upload (required)")
 	cmd.Flags().StringVar(&name, "name", "", "display name for the attachment (defaults to the file's base name)")
 	return cmd
