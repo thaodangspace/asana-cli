@@ -33,7 +33,11 @@ func TestTaskGraphListUsesPagination(t *testing.T) {
 	calls := 0
 	out, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.URL.Path != "/tasks/task/dependencies" || r.URL.Query().Get("limit") != "50" {
+		expectedLimit := "2"
+		if calls > 1 {
+			expectedLimit = "1"
+		}
+		if r.URL.Path != "/tasks/task/dependencies" || r.URL.Query().Get("limit") != expectedLimit {
 			t.Errorf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
 		}
 		if calls == 1 {

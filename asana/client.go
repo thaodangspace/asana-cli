@@ -588,49 +588,110 @@ func (c *Client) Download(ctx context.Context, pathOrURL string, w io.Writer) (i
 // are intentionally one-shot and are never retried because the reader may not
 // be replayable and repeating an upload can create duplicate attachments.
 func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string]string, fileField, fileName string, r io.Reader) (json.RawMessage, error) {
+	return c.uploadMultipart(ctx, pathOrURL, fields, fileField, fileName, r)
+}
+
+// UploadURL creates a multipart attachment from an external URL. The URL is
+// passed to Asana; the CLI never fetches it and therefore never sends the PAT
+// to that URL.
+func (c *Client) UploadURL(ctx context.Context, pathOrURL string, fields map[string]string) (json.RawMessage, error) {
+	return c.uploadMultipart(ctx, pathOrURL, fields, "", "", nil)
+}
+
+// uploadMultipart writes the multipart body through an io.Pipe. The producer
+// and request are connected by the pipe so file contents are never buffered in
+// memory. The cancellation watcher closes the reader to unblock a producer
+// that is waiting for the HTTP transport to consume its output.
+func (c *Client) uploadMultipart(ctx context.Context, pathOrURL string, fields map[string]string, fileField, fileName string, r io.Reader) (json.RawMessage, error) {
 	fullURL := c.buildURL(pathOrURL)
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
 
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	for k, v := range fields {
-		if err := mw.WriteField(k, v); err != nil {
-			return nil, fmt.Errorf("write form field %s: %w", k, err)
-		}
-	}
-	part, err := mw.CreateFormFile(fileField, fileName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, pr)
 	if err != nil {
-		return nil, fmt.Errorf("create form file: %w", err)
-	}
-	if _, err := io.Copy(part, r); err != nil {
-		return nil, fmt.Errorf("copy file content: %w", err)
-	}
-	if err := mw.Close(); err != nil {
-		return nil, fmt.Errorf("finalize multipart body: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, &buf)
-	if err != nil {
+		_ = pr.Close()
 		return nil, redactError(err, c.token)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
+	producerDone := make(chan error, 1)
+	producerFinished := make(chan struct{})
+	go func() {
+		defer close(producerFinished)
+		var writeErr error
+		for k, v := range fields {
+			if err := mw.WriteField(k, v); err != nil {
+				writeErr = fmt.Errorf("write form field %s: %w", k, err)
+				break
+			}
+		}
+		if writeErr == nil && r != nil {
+			part, err := mw.CreateFormFile(fileField, fileName)
+			if err != nil {
+				writeErr = fmt.Errorf("create form file: %w", err)
+			} else if _, err := io.Copy(part, r); err != nil {
+				writeErr = fmt.Errorf("copy file content: %w", err)
+			}
+		}
+		if writeErr == nil {
+			if err := mw.Close(); err != nil {
+				writeErr = fmt.Errorf("finalize multipart body: %w", err)
+			}
+		}
+		if writeErr != nil {
+			_ = pw.CloseWithError(writeErr)
+		} else {
+			_ = pw.Close()
+		}
+		producerDone <- writeErr
+	}()
+
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-ctx.Done():
+			// Local files and other closable readers can be interrupted while
+			// blocked in Read. An arbitrary io.Reader cannot be forcefully
+			// interrupted, but the pipe is still closed below so its writer is
+			// released as soon as Read returns.
+			if closer, ok := r.(io.Closer); ok {
+				_ = closer.Close()
+			}
+			_ = pr.CloseWithError(ctx.Err())
+		case <-producerFinished:
+		}
+	}()
+
 	if c.verbose && c.logw != nil {
 		fmt.Fprintf(c.logw, "%s %s\n", http.MethodPost, redactSecret(displayPath(pathOrURL), c.token))
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, redactError(err, c.token)
+	resp, doErr := c.httpClient.Do(req)
+	// Do can return before a custom RoundTripper has consumed the body. Close
+	// the reader in either case so the producer cannot remain blocked forever.
+	_ = pr.Close()
+	producerErr := <-producerDone
+	<-watcherDone
+	if doErr != nil {
+		return nil, redactError(doErr, c.token)
 	}
-	defer resp.Body.Close()
-
-	payload, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, redactError(err, c.token)
+	if producerErr != nil && ctx.Err() != nil {
+		resp.Body.Close()
+		return nil, ctx.Err()
+	}
+	if producerErr != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		resp.Body.Close()
+		return nil, producerErr
 	}
 
+	payload, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, redactError(readErr, c.token)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &HTTPError{
 			Method:          http.MethodPost,
@@ -641,7 +702,6 @@ func (c *Client) Upload(ctx context.Context, pathOrURL string, fields map[string
 			ResponseExcerpt: redactSecret(excerpt(payload), c.token),
 		}
 	}
-
 	return json.RawMessage(payload), nil
 }
 
@@ -682,6 +742,20 @@ func withOffset(pathOrURL, offset string) string {
 	return u.String()
 }
 
+func withLimit(pathOrURL string, limit int) string {
+	if limit <= 0 {
+		return pathOrURL
+	}
+	u, err := url.Parse(pathOrURL)
+	if err != nil {
+		return pathOrURL
+	}
+	q := u.Query()
+	q.Set("limit", strconv.Itoa(limit))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 func nextPage(current string, p *struct {
 	Offset string `json:"offset"`
 	Path   string `json:"path"`
@@ -707,11 +781,21 @@ func nextPage(current string, p *struct {
 // intentional or safety-bound partial results as truncated and exposes a
 // resumable next path/offset when Asana supplied one.
 func (c *Client) Paginate(ctx context.Context, pathOrURL string, limit, maxPages int) (PageResult, error) {
+	const requestPageSize = 50
 	result := PageResult{Items: make([]json.RawMessage, 0)}
 	next := pathOrURL
 
 	for next != "" && (limit <= 0 || len(result.Items) < limit) && (maxPages <= 0 || result.PagesFetched < maxPages) {
-		raw, err := c.Request(ctx, http.MethodGet, next, nil)
+		requestPath := next
+		if limit > 0 {
+			remaining := limit - len(result.Items)
+			requestSize := requestPageSize
+			if remaining < requestSize {
+				requestSize = remaining
+			}
+			requestPath = withLimit(next, requestSize)
+		}
+		raw, err := c.Request(ctx, http.MethodGet, requestPath, nil)
 		if err != nil {
 			return PageResult{}, err
 		}
@@ -722,7 +806,7 @@ func (c *Client) Paginate(ctx context.Context, pathOrURL string, limit, maxPages
 
 		result.Items = append(result.Items, p.Data...)
 		result.PagesFetched++
-		next, result.NextOffset = nextPage(next, p.NextPage)
+		next, result.NextOffset = nextPage(requestPath, p.NextPage)
 		hasNext := next != ""
 
 		if limit > 0 && len(result.Items) >= limit {

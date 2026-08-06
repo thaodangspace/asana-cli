@@ -88,7 +88,7 @@ func TestListWorkspaceCustomFieldsPaginates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(paths) != 2 || !strings.HasPrefix(paths[0], "/workspaces/ws1/custom_fields?") || paths[1] != "/workspaces/ws1/custom_fields?limit=50&offset=next" {
+	if len(paths) != 2 || paths[0] != "/workspaces/ws1/custom_fields?limit=2" || paths[1] != "/workspaces/ws1/custom_fields?limit=1&offset=next" {
 		t.Errorf("paths = %#v", paths)
 	}
 	var fields []json.RawMessage

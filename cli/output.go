@@ -147,6 +147,15 @@ func summarizeProject(raw json.RawMessage) string {
 	return fmt.Sprintf("%s %s", orUnknown(r.GID), name)
 }
 
+func summarizeSection(raw json.RawMessage) string {
+	r := parseResource(raw)
+	name := r.Name
+	if name == "" {
+		name = "(unnamed section)"
+	}
+	return fmt.Sprintf("%s %s", orUnknown(r.GID), name)
+}
+
 func summarizeTask(raw json.RawMessage) string {
 	r := parseResource(raw)
 	name := r.Name

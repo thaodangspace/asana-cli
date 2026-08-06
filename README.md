@@ -68,6 +68,7 @@ Keep the file private (`chmod 600 ~/.config/asana-cli.yaml`).
 commands require either it or an explicit `--workspace-gid`.
 
 Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
+`projects:write` for project/section lifecycle commands, `teams:read`,
 `tasks:read`, `stories:read`, `attachments:read`, `attachments:write` for
 `add-attachment`, `stories:write` for `comment-on-task`, and `tasks:write` for
 `create-task`, `update-task`, `duplicate-task`, and `delete-task`. Custom-field
@@ -92,15 +93,25 @@ workspace, project, or portfolio being changed.
 | `me` | `GET /users/me` | |
 | `list-workspaces` | `GET /workspaces` | `--limit`, `--all`, `--offset`, `--max-pages`, `--opt-fields` |
 | `list-projects` | `GET /workspaces/{ws}/projects` | `--workspace-gid`, pagination flags, `--opt-fields` |
+| `get-project` | `GET /projects/{gid}` | `--project-gid`, `--opt-fields` |
+| `create-project` | `POST /projects` | project fields, workspace/team context |
+| `update-project` | `PUT /projects/{gid}` | `--project-gid` plus changed project fields |
+| `delete-project` | `DELETE /projects/{gid}` | `--project-gid`, `--confirm` or `--yes` |
+| `duplicate-project` | `POST /projects/{gid}/duplicate` | `--include` and repeatable `--option` |
+| `search-projects` | `GET /workspaces/{ws}/projects/search` | one-page filters, `--limit`, repeatable `--query` |
+| `list-team-projects` | `GET /teams/{gid}/projects` | `--team-gid`, pagination flags |
 | `list-project-tasks` | `GET /projects/{project_gid}/tasks` | `--project-gid`, pagination flags, `--opt-fields` |
 | `list-tag-tasks` | `GET /tags/{tag_gid}/tasks` | `--tag-gid`, pagination flags, `--opt-fields` |
 | `search-tasks` | `GET /workspaces/{ws}/tasks/search` | search filters, one-page `--limit` (1-100), `--opt-fields` (may require premium) |
 | `get-task` | `GET /tasks/{gid}` | `--task-gid` (required), `--opt-fields` |
 | `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), pagination flags, `--opt-fields` |
-| `list-task-attachments` | `GET /attachments?parent={task_gid}` | `--task-gid` (required), pagination flags, `--opt-fields` |
+| `list-task-attachments` | `GET /attachments?parent={task_gid}` | backward-compatible task-only alias |
+| `list-attachments` | `GET /attachments?parent={parent_gid}` | `--parent-gid`, `--parent-type task\|project\|project-brief`, pagination flags, `--opt-fields` |
 | `get-attachment` | `GET /attachments/{gid}` | `--attachment-gid` (required), `--opt-fields` |
 | `download-attachment` | `GET /attachments/{gid}` then attachment `download_url` | `--attachment-gid`, `--output` (both required), `--overwrite` |
-| `add-attachment` | `POST /attachments` (multipart) | `--task-gid`, `--file` (both required), `--name`. Write command. |
+| `add-attachment` | `POST /attachments` (streamed multipart) | `--parent-gid`, `--parent-type`, `--file`; deprecated `--task-gid` alias; `--name`. Write command. |
+| `add-attachment-url` | `POST /attachments` (multipart URL fields) | `--parent-gid`, `--parent-type`, `--url` (HTTPS), `--name`. Write command. |
+| `delete-attachment` | `DELETE /attachments/{gid}` | `--attachment-gid`, `--confirm` or `--yes`. Write command. |
 | `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
 | `create-task` | `POST /tasks` | `--name` plus workspace, project, or parent context; supports dates, notes, followers, sections, and custom fields. |
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 mutable field. Supports explicit clearing and tri-state booleans. |
@@ -116,6 +127,11 @@ workspace, project, or portfolio being changed.
 | `list-custom-field-settings` | `GET /{projects\|portfolios}/{gid}/custom_field_settings` | `--parent-gid`, required `--parent-type`, pagination flags. |
 | `add-custom-field-setting` | `POST /{projects\|portfolios}/{gid}/custom_field_settings` | `--parent-gid`, `--parent-type`, `--custom-field-gid`, optional `--is-important`. |
 | `remove-custom-field-setting` | `DELETE /{projects\|portfolios}/{gid}/custom_field_settings/{field_gid}` | Removes a field from a project or portfolio. |
+| `list-sections` / `get-section` | `GET /projects/{gid}/sections`, `GET /sections/{gid}` | section/project GID |
+| `create-section` / `update-section` | `POST /projects/{gid}/sections`, `PUT /sections/{gid}` | `--name` |
+| `delete-section` / `move-section` | `DELETE /sections/{gid}`, `POST /projects/{gid}/sections/insert` | confirmation and before/after positioning |
+| `add-task-to-section` | `POST /sections/{gid}/addTask` | task GID and optional before/after positioning |
+| `list-section-tasks` | `GET /sections/{gid}/tasks` | section GID and pagination |
 | `list-subtasks`, `list-dependencies`, `list-dependents` | `GET /tasks/{gid}/{relationship}` | `--task-gid`, pagination flags, and `--opt-fields`. |
 | `create-subtask` | `POST /tasks/{gid}/subtasks` | `--task-gid`, `--name`, and common task fields. |
 | `set-task-parent`, `remove-task-parent` | `POST /tasks/{gid}/setParent` | Set or clear a task parent. |
@@ -132,9 +148,9 @@ collection is exhausted; it cannot be combined with an explicitly provided
 retained. `--all --max-pages N` provides a bounded full traversal. `--offset`
 resumes from an Asana offset token. `--max-pages` must be positive.
 
-Collection requests use a page size of 50. `search-tasks` is an exception: it
-accepts one request page with `--limit` from 1 through 100 and has no offset or
-continuation flags. It provides first-class text, assignee, project, section,
+Collection requests use a page size of 50. `search-tasks` and `search-projects`
+are exceptions: each accepts one request page with `--limit` from 1 through 100
+and has no offset or continuation flags. It provides first-class text, assignee, project, section,
 tag, team, follower, completion, due/start date, timestamp, subtype, and
 sorting filters. Repeatable filters such as `--project-any` are joined as
 comma-separated Asana query values. Use repeatable `--query key=value` for
@@ -246,6 +262,10 @@ asana-cli list-workspaces --all
 asana-cli list-workspaces --all --max-pages 20
 asana-cli list-workspaces --offset eyJ0eXAiOiJKV1Qi...
 asana-cli list-projects --workspace-gid 12345
+asana-cli create-project --workspace-gid 12345 --name "Launch v2" --public
+asana-cli create-section --project-gid 67890 --name "In progress"
+asana-cli add-task-to-section --section-gid 999 --task-gid 123 --after-task-gid 122
+asana-cli duplicate-project --project-gid 67890 --include tasks,members
 asana-cli list-project-tasks --project-gid 12345
 asana-cli list-tag-tasks --tag-gid 67890
 asana-cli search-tasks --text "release" --completed=false
@@ -255,10 +275,13 @@ asana-cli search-tasks --query 'custom_fields.111.value=222' \
 asana-cli get-task --task-gid 12345 --human
 asana-cli list-task-stories --task-gid 12345
 asana-cli list-task-attachments --task-gid 12345
+asana-cli list-attachments --parent-gid 12345 --parent-type task
 asana-cli get-attachment --attachment-gid 67890 --opt-fields name,download_url
 asana-cli download-attachment --attachment-gid 67890 --output ./Screenshot.png
-asana-cli add-attachment --task-gid 12345 --file ./Screenshot.png
-asana-cli add-attachment --task-gid 12345 --file ./out.log --name "run.log"
+asana-cli add-attachment --parent-gid 12345 --parent-type task --file ./Screenshot.png
+asana-cli add-attachment --task-gid 12345 --file ./out.log --name "run.log" # legacy alias
+asana-cli add-attachment-url --parent-gid 12345 --parent-type project --url https://example.com/design --name "Design doc"
+asana-cli delete-attachment --attachment-gid 67890 --yes
 asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
 asana-cli create-task --workspace-gid 12345 --name "Ship v2" --project-gid 67890 --due-on 2026-07-15
 asana-cli create-task --name "Subtask" --parent-task-gid 12345 --follower 67890
@@ -306,4 +329,15 @@ restrict its permissions (`chmod 600`). All API requests go over HTTPS to
 
 `download-attachment` writes attachment bytes only to the file named by
 `--output`. It refuses to overwrite existing files unless `--overwrite` is
-provided and removes partial output files when a download fails.
+provided and removes partial output files when a download fails. Download
+requests authenticate only to the configured Asana origin; external HTTPS
+`download_url` requests and redirects never receive the PAT, and external
+non-HTTPS downloads are rejected.
+
+Attachment parents may be tasks, projects, or project briefs. Asana enforces a
+100 MiB attachment limit. Local file uploads stream through a bounded-memory
+pipe and are not buffered in memory; cancellation and server failures stop the
+upload. `add-attachment-url` validates HTTPS URL
+syntax locally and passes the URL to Asana without fetching it from the CLI.
+The old `--task-gid` flag on `add-attachment` remains as a deprecated alias for
+`--parent-gid`. Attachment deletion requires explicit confirmation.

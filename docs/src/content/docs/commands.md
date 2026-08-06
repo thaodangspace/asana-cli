@@ -21,6 +21,12 @@ The advanced `api` command does not log request bodies or query values with
 asana-cli me [--opt-fields FIELDS]
 asana-cli list-workspaces [pagination options] [--opt-fields FIELDS]
 asana-cli list-projects --workspace-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli get-project --project-gid GID [--opt-fields FIELDS]
+asana-cli search-projects --workspace-gid GID [filters] [--limit N]
+asana-cli list-team-projects --team-gid GID [pagination options]
+asana-cli list-sections --project-gid GID [pagination options]
+asana-cli get-section --section-gid GID [--opt-fields FIELDS]
+asana-cli list-section-tasks --section-gid GID [pagination options]
 asana-cli list-project-tasks --project-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli list-tag-tasks --tag-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli search-tasks --workspace-gid GID [search options]
@@ -124,18 +130,53 @@ values and the legacy `json:` escape hatch remain supported. See the dedicated
 [custom-field guide](/custom-fields/) for discovery, premium limitations, and
 full examples.
 
+## Project and section lifecycle
+
+```sh
+asana-cli create-project --workspace-gid WORKSPACE --name "Launch v2" --public
+asana-cli update-project --project-gid PROJECT --archived=true --due-on 2026-12-31
+asana-cli duplicate-project --project-gid PROJECT --include tasks,members
+asana-cli create-section --project-gid PROJECT --name "In progress"
+asana-cli move-section --project-gid PROJECT --section-gid SECTION --before-section-gid OTHER
+asana-cli add-task-to-section --section-gid SECTION --task-gid TASK --after-task-gid OTHER
+asana-cli delete-section --section-gid SECTION --yes
+asana-cli delete-project --project-gid PROJECT --yes
+```
+
+Project updates use only explicitly supplied fields; optional booleans are
+tri-state and empty nullable values clear those fields. Project and section
+collections support `--limit`, `--all`, `--offset`, and `--max-pages`. Project
+search is single-page: use `--limit` (1-100), and `--offset`, `--all`, and
+`--max-pages` are not supported. Its first-class `--owner`, `--team`, and
+`--member` filters map to `owner.any`, `teams.any`, and `members.any`; use
+`--completed` and repeatable `--query key=value` for other search parameters.
+`--before-section-gid`/`--after-section-gid` and
+`--before-task-gid`/`--after-task-gid` are mutually exclusive. Duplication
+`--include` values are repeatable or comma-separated; use `--option key=value`
+for other documented Asana duplication options.
+
 ## Attachment commands
 
 ```sh
-asana-cli list-task-attachments --task-gid GID [pagination options]
+asana-cli list-task-attachments --task-gid GID [pagination options] # legacy alias
+asana-cli list-attachments --parent-gid GID [--parent-type task|project|project-brief] [pagination options]
 asana-cli get-attachment --attachment-gid GID [--opt-fields FIELDS]
 asana-cli download-attachment --attachment-gid GID --output PATH [--overwrite]
-asana-cli add-attachment --task-gid GID --file PATH [--name NAME]
+asana-cli add-attachment --parent-gid GID --parent-type task|project|project-brief --file PATH [--name NAME]
+asana-cli add-attachment-url --parent-gid GID --parent-type task|project|project-brief --url HTTPS_URL --name NAME
+asana-cli delete-attachment --attachment-gid GID --yes
 ```
 
-Downloads refuse to overwrite an existing file unless `--overwrite` is passed.
-Failed downloads remove partial output files. Uploads are write operations and
-require the appropriate Asana token scope.
+Attachments support task, project, and project-brief parents; Asana enforces a
+100 MiB attachment limit. Downloads refuse to overwrite an existing file unless
+`--overwrite` is passed and failed downloads
+remove partial output files. Local uploads stream through a bounded-memory pipe;
+they do not buffer the whole file and are canceled with the request. URL
+attachments require a syntactically valid HTTPS URL; the CLI passes the URL to
+Asana without fetching it. The old `--task-gid` upload flag remains as a
+backward-compatible alias for `--parent-gid`. Uploads and deletion are write
+operations and require the appropriate token scope; deletion also requires
+`--confirm` or `--yes`.
 
 ## Advanced API command
 
