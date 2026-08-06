@@ -19,6 +19,18 @@ The advanced `api` command does not log request bodies or query values with
 
 ```sh
 asana-cli me [--opt-fields FIELDS]
+asana-cli get-user --user-gid GID [--opt-fields FIELDS]
+asana-cli list-workspace-users --workspace-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli list-team-users --team-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli find-user --workspace-gid GID --email EMAIL
+asana-cli get-team --team-gid GID [--opt-fields FIELDS]
+asana-cli list-workspace-teams --workspace-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli list-user-teams --user-gid GID --organization-gid GID [pagination options]
+asana-cli list-team-memberships --team-gid GID [pagination options]
+asana-cli list-workspace-memberships --workspace-gid GID [pagination options]
+asana-cli list-user-workspace-memberships --user-gid GID [pagination options]
+asana-cli get-team-membership --team-membership-gid GID [--opt-fields FIELDS]
+asana-cli get-workspace-membership --workspace-membership-gid GID [--opt-fields FIELDS]
 asana-cli list-workspaces [pagination options] [--opt-fields FIELDS]
 asana-cli list-projects --workspace-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli get-project --project-gid GID [--opt-fields FIELDS]
@@ -29,6 +41,8 @@ asana-cli get-section --section-gid GID [--opt-fields FIELDS]
 asana-cli list-section-tasks --section-gid GID [pagination options]
 asana-cli list-project-tasks --project-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli list-tag-tasks --tag-gid GID [pagination options] [--opt-fields FIELDS]
+asana-cli get-tag --tag-gid GID [--opt-fields FIELDS]
+asana-cli list-tags --workspace-gid GID [pagination options] [--opt-fields FIELDS]
 asana-cli search-tasks --workspace-gid GID [search options]
 asana-cli get-task --task-gid GID [--opt-fields FIELDS]
 asana-cli list-task-stories --task-gid GID [pagination options]
@@ -82,6 +96,18 @@ values. First-class filters and `--query` compose in one request.
 
 Unlike collection endpoints, task search accepts one page only (up to 100
 results) and does not support `--offset`, `--all`, or `--max-pages` continuation.
+
+## Tag commands
+
+```sh
+asana-cli create-tag --workspace-gid WORKSPACE --name "Ready" --color light-green
+asana-cli update-tag --tag-gid TAG --name "In progress"
+asana-cli delete-tag --tag-gid TAG --yes
+```
+
+Tag deletion requires explicit `--confirm` or `--yes`. Colors are validated
+against Asana's supported tag color values before a request is sent. `find-user`
+uses an exact email match and fails rather than selecting an ambiguous result.
 
 ## Project and section lifecycle
 

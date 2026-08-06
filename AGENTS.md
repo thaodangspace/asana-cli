@@ -22,7 +22,7 @@ cli/                           # Cobra command tree (one file per subcommand)
   root.go                      #   root cmd, persistent flags, exitCodeFor, usageError type
   run.go                       #   buildClient, withTimeout, validateLimit, requireFlag, query helpers, requestData
   output.go                    #   {ok,data} / {ok,error} envelopes, summarizers, humanList
-  me.go list_workspaces.go list_projects.go search_tasks.go
+  me.go identity_commands.go tag_commands.go list_workspaces.go list_projects.go search_tasks.go
   get_task.go list_task_stories.go comment_on_task.go update_task.go
   list_task_attachments.go list_attachments.go get_attachment.go download_attachment.go
   add_attachment.go add_attachment_url.go delete_attachment.go api.go
@@ -61,6 +61,11 @@ docs/                           # Astro/Starlight static documentation site
   calls to relative paths, repeatable encoded `--query` values, validated inline
   JSON or `@file` bodies (up to 10 MiB), and `--raw-response`. Absolute paths and
   custom headers are rejected; empty successful responses render `data: null`.
+- **Identity and tags:** user, team, team-membership, and workspace-membership
+  discovery commands use shared pagination and `--opt-fields`; `find-user`
+  forces the email field and refuses truncated, zero, or ambiguous exact matches.
+  Tags support get/list/create/update/delete; tag deletion requires explicit
+  confirmation and colors are validated client-side.
 - **Attachments:** `list-task-attachments` is the backward-compatible task-only
   alias for `list-attachments`, which uses `GET /attachments?parent={parent_gid}`
   for task, project, and project-brief parents. `get-attachment` uses

@@ -64,5 +64,19 @@ Then list workspaces without modifying Asana:
 asana-cli list-workspaces --limit 10 --human
 ```
 
+Resolve an assignee, inspect teams and memberships, then create a tag for a
+workflow:
+
+```sh
+asana-cli find-user --workspace-gid WORKSPACE --email person@example.com
+asana-cli list-workspace-teams --workspace-gid WORKSPACE
+asana-cli list-workspace-memberships --workspace-gid WORKSPACE
+asana-cli create-tag --workspace-gid WORKSPACE --name "Ready" --color light-green
+```
+
+Pass the returned user or tag GID to task commands such as `create-task` or
+`add-tag-to-task`. `find-user` requires exactly one email match and never picks
+one silently when the result is ambiguous.
+
 See [Configuration and security](/configuration-security/) for token handling
 and [Commands](/commands/) for the available operations.

@@ -89,6 +89,13 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | Command | Asana endpoint | Notes |
 |---------|----------------|-------|
 | `me` | `GET /users/me` | |
+| `get-user` | `GET /users/{gid}` | `--user-gid` (`me` accepted), `--opt-fields` |
+| `list-workspace-users` | `GET /workspaces/{gid}/users` | pagination, `--opt-fields` |
+| `list-team-users` | `GET /teams/{gid}/users` | `--team-gid`, pagination, `--opt-fields` |
+| `find-user` | `GET /workspaces/{gid}/users` | exact `--email` lookup; refuses zero or multiple matches |
+| `get-team` | `GET /teams/{gid}` | `--team-gid`, `--opt-fields` |
+| `list-workspace-teams` | `GET /organizations/{gid}/teams` | pagination, `--opt-fields` |
+| `list-user-teams` | `GET /users/{gid}/teams` | `--user-gid`, `--organization-gid`, pagination |
 | `list-workspaces` | `GET /workspaces` | `--limit`, `--all`, `--offset`, `--max-pages`, `--opt-fields` |
 | `list-projects` | `GET /workspaces/{ws}/projects` | `--workspace-gid`, pagination flags, `--opt-fields` |
 | `get-project` | `GET /projects/{gid}` | `--project-gid`, `--opt-fields` |
@@ -100,6 +107,11 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `list-team-projects` | `GET /teams/{gid}/projects` | `--team-gid`, pagination flags |
 | `list-project-tasks` | `GET /projects/{project_gid}/tasks` | `--project-gid`, pagination flags, `--opt-fields` |
 | `list-tag-tasks` | `GET /tags/{tag_gid}/tasks` | `--tag-gid`, pagination flags, `--opt-fields` |
+| `get-tag` | `GET /tags/{gid}` | `--tag-gid`, `--opt-fields` |
+| `list-tags` | `GET /workspaces/{gid}/tags` | pagination, `--opt-fields` |
+| `create-tag` | `POST /tags` | `--workspace-gid`, `--name`, optional `--color` |
+| `update-tag` | `PUT /tags/{gid}` | `--tag-gid` plus `--name` and/or `--color` |
+| `delete-tag` | `DELETE /tags/{gid}` | `--tag-gid`, `--confirm` or `--yes` |
 | `search-tasks` | `GET /workspaces/{ws}/tasks/search` | search filters, one-page `--limit` (1-100), `--opt-fields` (may require premium) |
 | `get-task` | `GET /tasks/{gid}` | `--task-gid` (required), `--opt-fields` |
 | `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), pagination flags, `--opt-fields` |
@@ -126,6 +138,9 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `add-dependency`, `remove-dependency` | `POST /tasks/{gid}/{operation}` | `--task-gid` and `--dependency-task-gid`. |
 | `add-task-to-project`, `remove-task-from-project` | `POST /tasks/{gid}/{operation}` | Project membership; add supports section and mutually exclusive positioning flags. |
 | `add-tag-to-task`, `remove-tag-from-task` | `POST /tasks/{gid}/{operation}` | `--task-gid` and `--tag-gid`. |
+| `list-team-memberships`, `get-team-membership` | team membership endpoints | discovery commands with pagination / `--opt-fields` |
+| `list-workspace-memberships`, `get-workspace-membership` | workspace membership endpoints | discovery commands with pagination / `--opt-fields` |
+| `list-user-workspace-memberships` | `GET /users/{gid}/workspace_memberships` | `--user-gid`, pagination, `--opt-fields` |
 | `add-task-followers`, `remove-task-followers` | `POST /tasks/{gid}/{operation}` | Repeatable ordered `--follower` user GIDs or `me`. |
 | `api` | arbitrary relative API path | `METHOD PATH`, repeatable `--query`, optional JSON `--data`/`@FILE`, and `--raw-response`. Advanced escape hatch. |
 
