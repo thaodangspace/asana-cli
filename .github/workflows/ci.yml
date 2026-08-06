@@ -1,0 +1,196 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-quality:
+    name: go-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Check module consistency
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run race tests
+        run: |
+          env \
+            ASANA_CONFIG=/dev/null \
+            ASANA_ACCESS_TOKEN= \
+            ASANA_DEFAULT_WORKSPACE= \
+            ASANA_API_BASE= \
+            go test -count=1 -race ./...
+
+      - name: Produce coverage
+        run: |
+          env \
+            ASANA_CONFIG=/dev/null \
+            ASANA_ACCESS_TOKEN= \
+            ASANA_DEFAULT_WORKSPACE= \
+            ASANA_API_BASE= \
+            go test -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: go-coverage
+          path: coverage.out
+          retention-days: 7
+
+  build-smoke:
+    name: build-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="ci-${GITHUB_SHA:0:12}"
+          VERSION="$version" make build
+
+          version_output="$(./asana-cli --version)"
+          printf '%s\n' "$version_output"
+          grep -F "$version" <<<"$version_output"
+          ./asana-cli --help >/dev/null
+
+          set +e
+          error_output="$(
+            ASANA_CONFIG=/dev/null \
+            ASANA_ACCESS_TOKEN= \
+            ASANA_DEFAULT_WORKSPACE= \
+            ASANA_API_BASE= \
+            ./asana-cli me 2>&1
+          )"
+          status=$?
+          set -e
+          printf '%s\n' "$error_output"
+          test "$status" -eq 2
+          grep -F '"ok": false' <<<"$error_output"
+          grep -F '"message":' <<<"$error_output"
+
+  cross-build:
+    name: cross-build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Cross-compile
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="ci-${GITHUB_SHA:0:12}"
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/thaodangspace/asana-cli/cli.version=$version" \
+            -o "dist/asana-cli-${GOOS}-${GOARCH}" \
+            ./cmd/asana-cli
+
+  docs-build:
+    name: docs-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install documentation dependencies
+        run: npm --prefix docs ci
+
+      - name: Build documentation
+        env:
+          ASTRO_TELEMETRY_DISABLED: '1'
+        run: npm --prefix docs run build
+
+      - name: Verify documentation output
+        run: |
+          test -d docs/dist
+          test -n "$(find docs/dist -type f -print -quit)"
