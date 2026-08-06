@@ -37,6 +37,32 @@ Requires Go 1.22+. The only third-party dependency is `spf13/cobra`.
 
 Check the installed version with `asana-cli --version`.
 
+### Verify a release
+
+Release archives are accompanied by `checksums.txt`, a machine-readable
+`release-manifest.json`, and one SPDX SBOM per platform. Download the current
+release and verify its exact bytes and GitHub Actions provenance:
+
+```bash
+tag="$(gh release view --repo thaodangspace/asana-cli --json tagName --jq .tagName)"
+mkdir -p "release-$tag"
+gh release download "$tag" --repo thaodangspace/asana-cli --dir "release-$tag"
+cd "release-$tag"
+sha256sum -c checksums.txt --ignore-missing
+jq -e '.artifacts | map(select(.kind == "sbom")) | length == 4' release-manifest.json
+for asset in asana-cli_*.tar.gz checksums.txt release-manifest.json *.sbom.spdx.json; do
+  gh attestation verify "$asset" \
+    --repo thaodangspace/asana-cli \
+    --signer-workflow thaodangspace/asana-cli/.github/workflows/release.yml \
+    --source-ref "refs/tags/$tag"
+done
+```
+
+Installations may use `brew tap thaodangspace/tap && brew install asana-cli`,
+then confirm `asana-cli --version`. Report a digest, provenance, or formula
+mismatch with the tag and observed/expected values; never include credentials.
+Maintainers should follow [`docs/maintainers/releasing.md`](docs/maintainers/releasing.md).
+
 ## Configuration
 
 Credentials come from environment variables or a YAML config file. Environment

@@ -41,9 +41,13 @@ def main() -> None:
     archives: dict[tuple[str, str], tuple[str, str]] = {}
     if "artifacts" in manifest:
         for artifact in manifest["artifacts"]:
-            target = (artifact["goos"], artifact["goarch"])
-            path = args.dist / artifact["name"]
-            archives[target] = (artifact["name"], artifact["sha256"])
+            if not isinstance(artifact, dict) or artifact.get("kind", "archive") != "archive":
+                continue
+            target = (artifact.get("goos", artifact.get("os")), artifact.get("goarch", artifact.get("arch")))
+            name = artifact.get("filename", artifact.get("name"))
+            if not isinstance(name, str) or not isinstance(artifact.get("sha256"), str):
+                fail("manifest archive metadata is incomplete")
+            archives[target] = (name, artifact["sha256"])
     else:
         for path in args.dist.glob("asana-cli_*_*.tar.gz"):
             parts = path.name.removesuffix(".tar.gz").rsplit("_", 2)

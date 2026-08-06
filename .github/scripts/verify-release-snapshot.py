@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import stat
@@ -84,6 +85,29 @@ def verify_checksums(dist: Path, archives: dict[tuple[str, str], str]) -> None:
             fail(f"checksums.txt has no entry for {name}")
 
 
+def verify_sboms(dist: Path, archives: dict[tuple[str, str], str], version: str) -> None:
+    checksum_path = dist / "checksums.txt"
+    checksums = {}
+    for line in checksum_path.read_text().splitlines():
+        fields = line.split()
+        if len(fields) == 2 and SHA256_RE.fullmatch(fields[0]):
+            checksums[fields[1]] = fields[0]
+    for archive_name in archives.values():
+        sbom_name = f"{archive_name[:-len('.tar.gz')]}.sbom.spdx.json"
+        path = dist / sbom_name
+        if not path.is_file():
+            fail(f"SBOM is missing: {sbom_name}")
+        try:
+            document = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            fail(f"SBOM is not valid JSON: {sbom_name}: {exc}")
+        if not isinstance(document, dict) or document.get("spdxVersion") not in {"SPDX-2.2", "SPDX-2.3"}:
+            fail(f"SBOM is not SPDX JSON: {sbom_name}")
+        expected = hashlib.sha256(path.read_bytes()).hexdigest()
+        if checksums.get(sbom_name) != expected:
+            fail(f"checksums.txt has no matching entry for {sbom_name}")
+
+
 def verify_formula(dist: Path, archives: dict[tuple[str, str], str]) -> None:
     formula_path = dist / "homebrew" / "Formula" / "asana-cli.rb"
     if not formula_path.is_file():
@@ -143,6 +167,7 @@ def main() -> None:
     artifacts = read_artifacts(dist)
     archives, version = verify_archives(dist, artifacts)
     verify_checksums(dist, archives)
+    verify_sboms(dist, archives, version)
     verify_formula(dist, archives)
     verify_linux_binary(dist, archives, version)
     print("release snapshot artifact contract verified")

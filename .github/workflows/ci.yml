@@ -33,6 +33,9 @@ jobs:
       - name: Download modules
         run: go mod download
 
+      - name: Verify immutable GitHub Actions pins
+        run: python3 .github/scripts/verify-action-pins.py .github/workflows
+
       - name: Check formatting
         shell: bash
         run: |
@@ -118,7 +121,7 @@ jobs:
           grep -F '"ok": false' <<<"$error_output"
           grep -F '"message":' <<<"$error_output"
 
-  cross-build:
+  cross-build-targets:
     name: cross-build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -164,6 +167,21 @@ jobs:
             -ldflags "-s -w -X github.com/thaodangspace/asana-cli/cli.version=$version" \
             -o "dist/asana-cli-${GOOS}-${GOARCH}" \
             ./cmd/asana-cli
+
+  cross-build:
+    name: cross-build
+    needs: cross-build-targets
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require every target build
+        if: needs.cross-build-targets.result != 'success'
+        run: exit 1
+      - name: Summarize target builds
+        run: echo "All four cross-build targets passed."
 
   docs-build:
     name: docs-build
@@ -235,6 +253,20 @@ jobs:
 
       - name: Build clean release snapshot
         run: goreleaser release --snapshot --clean
+
+      - name: Generate pinned SPDX SBOMs for snapshot validation
+        env:
+          SYFT_VERSION: v1.31.0
+          SYFT_SHA256: aa60fbe2a32453e7dea991c9c5c616ae1fff0c51e910419ae53bc6555bfd2ce2
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/syft.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
+            --output "$archive"
+          echo "$SYFT_SHA256  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" syft
+          python3 .github/scripts/generate-release-sboms.py dist --tool "$RUNNER_TEMP/syft" --tool-version "${SYFT_VERSION#v}"
 
       - name: Generate Homebrew formula for snapshot validation
         run: python3 .github/scripts/generate-homebrew-formula.py dist

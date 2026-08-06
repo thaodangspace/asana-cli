@@ -41,6 +41,13 @@ export default defineConfig({
           label: 'Reference',
           items: [{ label: 'Deploy to Cloudflare Pages', slug: 'deploy' }],
         },
+        {
+          label: 'Maintainers',
+          items: [
+            { label: 'Releasing', slug: 'maintainers/releasing' },
+            { label: 'Repository rules', slug: 'maintainers/repository-rules' },
+          ],
+        },
       ],
       customCss: ['./src/styles/custom.css'],
     }),

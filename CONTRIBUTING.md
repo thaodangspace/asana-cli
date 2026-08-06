@@ -61,9 +61,11 @@ Homebrew formula. Its short-retention `release-snapshot-debug` artifact is for
 debugging only and is not a release distribution.
 
 The checks are intentionally fail-closed: configuration errors fail at
-`goreleaser check`, build/linker and formula errors fail during the snapshot,
-mutating hooks fail the clean-tree check, and missing targets or checksums fail
-the artifact verifier.
+`goreleaser check`, build/linker, SBOM, and formula errors fail during the
+snapshot, mutating hooks fail the clean-tree check, and missing targets or
+checksums fail the artifact verifier. See the [release runbook](docs/maintainers/releasing.md)
+and [repository rules](docs/maintainers/repository-rules.md) before changing
+release workflows.
 
 ## Tests
 
