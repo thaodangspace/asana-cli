@@ -121,7 +121,7 @@ jobs:
           grep -F '"ok": false' <<<"$error_output"
           grep -F '"message":' <<<"$error_output"
 
-  cross-build:
+  cross-build-targets:
     name: cross-build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -167,6 +167,21 @@ jobs:
             -ldflags "-s -w -X github.com/thaodangspace/asana-cli/cli.version=$version" \
             -o "dist/asana-cli-${GOOS}-${GOARCH}" \
             ./cmd/asana-cli
+
+  cross-build:
+    name: cross-build
+    needs: cross-build-targets
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require every target build
+        if: needs.cross-build-targets.result != 'success'
+        run: exit 1
+      - name: Summarize target builds
+        run: echo "All four cross-build targets passed."
 
   docs-build:
     name: docs-build
