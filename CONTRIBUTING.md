@@ -43,6 +43,28 @@ npm --prefix docs run build
 
 The documentation build uses the Node.js version declared in `.node-version`.
 
+## Release snapshots
+
+Pull requests run the `release-snapshot` job. It validates `.goreleaser.yaml`,
+builds without publishing, and checks the stable artifact contract:
+
+```text
+asana-cli_<version>_darwin_amd64.tar.gz
+asana-cli_<version>_darwin_arm64.tar.gz
+asana-cli_<version>_linux_amd64.tar.gz
+asana-cli_<version>_linux_arm64.tar.gz
+checksums.txt
+```
+
+The job also executes the Linux amd64 binary and validates the generated
+Homebrew formula. Its short-retention `release-snapshot-debug` artifact is for
+debugging only and is not a release distribution.
+
+The checks are intentionally fail-closed: configuration errors fail at
+`goreleaser check`, build/linker and formula errors fail during the snapshot,
+mutating hooks fail the clean-tree check, and missing targets or checksums fail
+the artifact verifier.
+
 ## Tests
 
 Tests use an in-process HTTP server and do not need an Asana token or network
