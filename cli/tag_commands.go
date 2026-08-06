@@ -12,7 +12,6 @@ import (
 )
 
 var validTagColors = map[string]bool{
-	"none":      true,
 	"dark-pink": true, "dark-green": true, "dark-blue": true, "dark-red": true,
 	"dark-teal": true, "dark-brown": true, "dark-orange": true, "dark-purple": true, "dark-warm-gray": true,
 	"light-pink": true, "light-green": true, "light-blue": true, "light-red": true,

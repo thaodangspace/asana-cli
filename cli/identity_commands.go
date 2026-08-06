@@ -96,7 +96,7 @@ func newListWorkspaceUsersCommand() *cobra.Command {
 			if err != nil {
 				return &usageError{err: err}
 			}
-			return resourceListCommand(cmd, "/workspaces/"+asana.EncodePathSegment(workspace)+"/users", &pagination, optFields, "No users found.", summarizeIdentityUser)
+			return resourceListCommand(cmd, "/users?workspace="+url.QueryEscape(workspace), &pagination, optFields, "No users found.", summarizeIdentityUser)
 		},
 	}
 	cmd.Flags().StringVar(&workspaceGID, "workspace-gid", "", "Asana workspace GID (defaults to ASANA_DEFAULT_WORKSPACE)")
@@ -119,7 +119,7 @@ func newListTeamUsersCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return resourceListCommand(cmd, "/teams/"+asana.EncodePathSegment(gid)+"/users", &pagination, optFields, "No users found.", summarizeIdentityUser)
+			return resourceListCommand(cmd, "/users?team="+url.QueryEscape(gid), &pagination, optFields, "No users found.", summarizeIdentityUser)
 		},
 	}
 	cmd.Flags().StringVar(&teamGID, "team-gid", "", "Asana team GID (required)")
@@ -168,7 +168,8 @@ func newFindUserCommand() *cobra.Command {
 			} else {
 				q.Set("opt_fields", fields)
 			}
-			result, err := c.Paginate(ctx, "/workspaces/"+asana.EncodePathSegment(workspace)+"/users?"+q.Encode(), limit, paginationPageLimit(cmd, &pagination))
+			q.Set("workspace", workspace)
+			result, err := c.Paginate(ctx, "/users?"+q.Encode(), limit, paginationPageLimit(cmd, &pagination))
 			if err != nil {
 				return err
 			}
@@ -220,7 +221,7 @@ func newListWorkspaceTeamsCommand() *cobra.Command {
 		if err != nil {
 			return &usageError{err: err}
 		}
-		return resourceListCommand(cmd, "/organizations/"+asana.EncodePathSegment(workspace)+"/teams", &pagination, optFields, "No teams found.", summarizeIdentityResource)
+		return resourceListCommand(cmd, "/workspaces/"+asana.EncodePathSegment(workspace)+"/teams", &pagination, optFields, "No teams found.", summarizeIdentityResource)
 	}}
 	cmd.Flags().StringVar(&workspaceGID, "workspace-gid", "", "Asana workspace GID (defaults to ASANA_DEFAULT_WORKSPACE)")
 	pagination.addFlags(cmd, 20)
@@ -253,7 +254,7 @@ func newListUserTeamsCommand() *cobra.Command {
 }
 
 func newListTeamMembershipsCommand() *cobra.Command {
-	return newMembershipListCommand("list-team-memberships", "List memberships for an Asana team", "team-gid", "/teams/", "/memberships")
+	return newMembershipListCommand("list-team-memberships", "List memberships for an Asana team", "team-gid", "/teams/", "/team_memberships")
 }
 
 func newListWorkspaceMembershipsCommand() *cobra.Command {
@@ -351,7 +352,7 @@ func newWorkspaceMembershipListCommand(use, short string) *cobra.Command {
 		if err != nil {
 			return &usageError{err: err}
 		}
-		return resourceListCommand(cmd, "/workspaces/"+asana.EncodePathSegment(workspace)+"/memberships", &pagination, optFields, "No workspace memberships found.", summarizeIdentityResource)
+		return resourceListCommand(cmd, "/workspaces/"+asana.EncodePathSegment(workspace)+"/workspace_memberships", &pagination, optFields, "No workspace memberships found.", summarizeIdentityResource)
 	}}
 	cmd.Flags().StringVar(&workspaceGID, "workspace-gid", "", "Asana workspace GID (defaults to ASANA_DEFAULT_WORKSPACE)")
 	pagination.addFlags(cmd, 20)
