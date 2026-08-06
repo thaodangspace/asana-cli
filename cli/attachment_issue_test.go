@@ -72,7 +72,7 @@ func TestAddAttachmentURLValidatesAndSendsMultipartFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if form.Get("parent") != "project1" || form.Get("url") != "https://example.com/design" || form.Get("name") != "Design doc" {
+	if form.Get("parent") != "project1" || form.Get("url") != "https://example.com/design" || form.Get("name") != "Design doc" || form.Get("resource_subtype") != "external" {
 		t.Errorf("form = %#v", form)
 	}
 	if !strings.Contains(out, "att-url") {

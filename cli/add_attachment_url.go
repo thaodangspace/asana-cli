@@ -47,9 +47,10 @@ func newAddAttachmentURLCommand() *cobra.Command {
 			ctx, cancel := withTimeout(cmd)
 			defer cancel()
 			raw, err := c.UploadURL(ctx, "/attachments", map[string]string{
-				"parent": gid,
-				"url":    remote,
-				"name":   displayName,
+				"parent":           gid,
+				"url":              remote,
+				"name":             displayName,
+				"resource_subtype": "external",
 			})
 			if err != nil {
 				return err
