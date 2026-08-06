@@ -287,7 +287,8 @@ func newCreateCustomFieldCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return customFieldDefinitionMutation(cmd, http.MethodPost, "/workspaces/"+asana.EncodePathSegment(ws)+"/custom_fields", data, "Created custom field")
+			data["workspace"] = ws
+			return customFieldDefinitionMutation(cmd, http.MethodPost, "/custom_fields", data, "Created custom field")
 		},
 	}
 	cmd.Flags().StringVar(&workspace, "workspace-gid", "", "workspace GID (required)")
@@ -434,7 +435,7 @@ func newDisableEnumOptionCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return customFieldMutation(cmd, http.MethodPost, enumOptionPath(gid)+"/disable", map[string]any{}, "Disabled enum option "+gid+".")
+			return customFieldMutation(cmd, http.MethodPut, enumOptionPath(gid), map[string]any{"enabled": false}, "Disabled enum option "+gid+".")
 		},
 	}
 	cmd.Flags().StringVar(&gid, "enum-option-gid", "", "enum option GID (required)")
@@ -467,13 +468,13 @@ func newReorderEnumOptionCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				data["before_value"] = value
+				data["before_enum_option"] = value
 			} else {
 				value, err := requireFlag("after", after)
 				if err != nil {
 					return err
 				}
-				data["after_value"] = value
+				data["after_enum_option"] = value
 			}
 			return customFieldMutation(cmd, http.MethodPost, customFieldPath(field)+"/enum_options/insert", data, "Reordered enum option "+option+".")
 		},
@@ -491,6 +492,14 @@ func customFieldSettingsBase(parentType, parentGID string) (string, error) {
 		return "", usageErrorf("--parent-type must be project or portfolio, got %q", parentType)
 	}
 	return "/" + parentType + "s/" + asana.EncodePathSegment(parentGID) + "/custom_field_settings", nil
+}
+
+func customFieldSettingMutationPath(parentType, parentGID, operation string) (string, error) {
+	parentType = strings.ToLower(strings.TrimSpace(parentType))
+	if parentType != "project" && parentType != "portfolio" {
+		return "", usageErrorf("--parent-type must be project or portfolio, got %q", parentType)
+	}
+	return "/" + parentType + "s/" + asana.EncodePathSegment(parentGID) + "/" + operation, nil
 }
 
 func newListCustomFieldSettingsCommand() *cobra.Command {
@@ -559,7 +568,7 @@ func newAddCustomFieldSettingCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			base, err := customFieldSettingsBase(parentType, parent)
+			path, err := customFieldSettingMutationPath(parentType, parent, "addCustomFieldSetting")
 			if err != nil {
 				return err
 			}
@@ -567,7 +576,7 @@ func newAddCustomFieldSettingCommand() *cobra.Command {
 			if cmd.Flags().Changed("is-important") {
 				data["is_important"] = important
 			}
-			return customFieldMutation(cmd, http.MethodPost, base, data, "Added custom field "+field+" to "+parent+".")
+			return customFieldMutation(cmd, http.MethodPost, path, data, "Added custom field "+field+" to "+parent+".")
 		},
 	}
 	cmd.Flags().StringVar(&parentGID, "parent-gid", "", "project or portfolio GID (required)")
@@ -594,11 +603,11 @@ func newRemoveCustomFieldSettingCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			base, err := customFieldSettingsBase(parentType, parent)
+			path, err := customFieldSettingMutationPath(parentType, parent, "removeCustomFieldSetting")
 			if err != nil {
 				return err
 			}
-			return customFieldMutation(cmd, http.MethodDelete, base+"/"+asana.EncodePathSegment(field), nil, "Removed custom field "+field+" from "+parent+".")
+			return customFieldMutation(cmd, http.MethodPost, path, map[string]any{"custom_field": field}, "Removed custom field "+field+" from "+parent+".")
 		},
 	}
 	cmd.Flags().StringVar(&parentGID, "parent-gid", "", "project or portfolio GID (required)")
@@ -699,7 +708,9 @@ func parseCustomFieldValue(raw, gid string) (any, error) {
 		}
 		return result, nil
 	default:
-		return nil, usageErrorf("custom field %q has unsupported value type %q (use text, number, enum, multi-enum, date, people, or null)", gid, typ)
+		// A colon is valid in legacy untyped text values (for example URLs).
+		// Only recognized prefixes opt into typed parsing.
+		return raw, nil
 	}
 }
 

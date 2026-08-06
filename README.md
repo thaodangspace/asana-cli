@@ -119,14 +119,14 @@ workspace, project, or portfolio being changed.
 | `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. Returns an asynchronous job. |
 | `get-custom-field` | `GET /custom_fields/{gid}` | `--custom-field-gid`, `--opt-fields` |
 | `list-workspace-custom-fields` | `GET /workspaces/{gid}/custom_fields` | `--workspace-gid`, pagination flags, `--opt-fields` |
-| `create-custom-field` | `POST /workspaces/{gid}/custom_fields` | Definition flags such as `--name`, `--resource-subtype`, `--precision`, and JSON representation options. |
+| `create-custom-field` | `POST /custom_fields` | Definition flags such as `--name`, `--workspace-gid`, `--resource-subtype`, `--precision`, and JSON representation options. |
 | `update-custom-field` | `PUT /custom_fields/{gid}` | Partial definition update; only changed flags are sent. |
 | `delete-custom-field` | `DELETE /custom_fields/{gid}` | Requires `--confirm` or `--yes`. |
 | `create-enum-option`, `update-enum-option`, `disable-enum-option` | Enum option endpoints | Create, edit, or disable options by GID. |
-| `reorder-enum-option` | `POST /custom_fields/{gid}/enum_options/insert` | Requires exactly one `--before` or `--after`. |
+| `reorder-enum-option` | `POST /custom_fields/{gid}/enum_options/insert` | Requires exactly one `--before` or `--after`; sends `before_enum_option`/`after_enum_option`. |
 | `list-custom-field-settings` | `GET /{projects\|portfolios}/{gid}/custom_field_settings` | `--parent-gid`, required `--parent-type`, pagination flags. |
-| `add-custom-field-setting` | `POST /{projects\|portfolios}/{gid}/custom_field_settings` | `--parent-gid`, `--parent-type`, `--custom-field-gid`, optional `--is-important`. |
-| `remove-custom-field-setting` | `DELETE /{projects\|portfolios}/{gid}/custom_field_settings/{field_gid}` | Removes a field from a project or portfolio. |
+| `add-custom-field-setting` | `POST /{projects\|portfolios}/{gid}/addCustomFieldSetting` | `--parent-gid`, `--parent-type`, `--custom-field-gid`, optional `--is-important`. |
+| `remove-custom-field-setting` | `POST /{projects\|portfolios}/{gid}/removeCustomFieldSetting` | Sends `custom_field` to remove a field. |
 | `list-sections` / `get-section` | `GET /projects/{gid}/sections`, `GET /sections/{gid}` | section/project GID |
 | `create-section` / `update-section` | `POST /projects/{gid}/sections`, `PUT /sections/{gid}` | `--name` |
 | `delete-section` / `move-section` | `DELETE /sections/{gid}`, `POST /projects/{gid}/sections/insert` | confirmation and before/after positioning |

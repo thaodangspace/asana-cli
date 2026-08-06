@@ -39,7 +39,6 @@ func TestParseTypedCustomFieldsRejectsInvalidValues(t *testing.T) {
 		"field=number:not-a-number",
 		"field=people:user-1,user-1",
 		"field=multi-enum:user-1,",
-		"field=unsupported:value",
 	} {
 		if _, err := parseCustomFields([]string{assignment}); err == nil || exitCodeFor(err) != exitUsage {
 			t.Errorf("%q: error = %v, want usage error", assignment, err)
@@ -47,10 +46,20 @@ func TestParseTypedCustomFieldsRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestLegacyColonCustomFieldValueRemainsText(t *testing.T) {
+	fields, err := parseCustomFields([]string{"field=https://example.com/a:b"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := fields["field"]; got != "https://example.com/a:b" {
+		t.Errorf("value = %#v", got)
+	}
+}
+
 func TestCreateCustomFieldCommand(t *testing.T) {
 	var body map[string]map[string]any
 	out, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/workspaces/ws1/custom_fields" {
+		if r.Method != http.MethodPost || r.URL.Path != "/custom_fields" {
 			t.Errorf("request = %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -63,7 +72,7 @@ func TestCreateCustomFieldCommand(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data := body["data"]
-	if data["name"] != "Priority" || data["resource_subtype"] != "enum" {
+	if data["name"] != "Priority" || data["resource_subtype"] != "enum" || data["workspace"] != "ws1" {
 		t.Errorf("definition = %#v", data)
 	}
 	if got, ok := data["precision"].(float64); !ok || got != 0 {
@@ -98,6 +107,45 @@ func TestListWorkspaceCustomFieldsPaginates(t *testing.T) {
 	}
 }
 
+func TestReorderEnumOptionUsesDocumentedPayload(t *testing.T) {
+	var body map[string]map[string]any
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/custom_fields/cf1/enum_options/insert" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"gid":"opt1"}}`))
+	}, "reorder-enum-option", "--custom-field-gid", "cf1", "--enum-option-gid", "opt1", "--before", "opt2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if body["data"]["enum_option"] != "opt1" || body["data"]["before_enum_option"] != "opt2" {
+		t.Errorf("payload = %#v", body)
+	}
+	if _, ok := body["data"]["before_value"]; ok {
+		t.Errorf("legacy before_value key present: %#v", body)
+	}
+}
+
+func TestDisableEnumOptionUsesUpdate(t *testing.T) {
+	var body map[string]map[string]any
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/enum_options/opt1" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"gid":"opt1","enabled":false}}`))
+	}, "disable-enum-option", "--enum-option-gid", "opt1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if enabled, ok := body["data"]["enabled"].(bool); !ok || enabled {
+		t.Errorf("payload = %#v", body)
+	}
+}
+
 func TestReorderEnumOptionRequiresExactlyOnePosition(t *testing.T) {
 	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not be called")
@@ -110,7 +158,7 @@ func TestReorderEnumOptionRequiresExactlyOnePosition(t *testing.T) {
 func TestAddCustomFieldSettingPortfolio(t *testing.T) {
 	var body map[string]map[string]any
 	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/portfolios/portfolio1/custom_field_settings" {
+		if r.Method != http.MethodPost || r.URL.Path != "/portfolios/portfolio1/addCustomFieldSetting" {
 			t.Errorf("request = %s %s", r.Method, r.URL.Path)
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -122,5 +170,23 @@ func TestAddCustomFieldSettingPortfolio(t *testing.T) {
 	}
 	if got, ok := body["data"]["is_important"].(bool); !ok || got {
 		t.Errorf("is_important = %#v", body["data"]["is_important"])
+	}
+}
+
+func TestRemoveCustomFieldSettingUsesOperationEndpoint(t *testing.T) {
+	var body map[string]map[string]any
+	_, err := runWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project1/removeCustomFieldSetting" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":null}`))
+	}, "remove-custom-field-setting", "--parent-gid", "project1", "--parent-type", "project", "--custom-field-gid", "cf1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if body["data"]["custom_field"] != "cf1" {
+		t.Errorf("payload = %#v", body)
 	}
 }
