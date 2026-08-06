@@ -103,10 +103,13 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `search-tasks` | `GET /workspaces/{ws}/tasks/search` | search filters, one-page `--limit` (1-100), `--opt-fields` (may require premium) |
 | `get-task` | `GET /tasks/{gid}` | `--task-gid` (required), `--opt-fields` |
 | `list-task-stories` | `GET /tasks/{gid}/stories` | `--task-gid` (required), pagination flags, `--opt-fields` |
-| `list-task-attachments` | `GET /attachments?parent={task_gid}` | `--task-gid` (required), pagination flags, `--opt-fields` |
+| `list-task-attachments` | `GET /attachments?parent={task_gid}` | backward-compatible task-only alias |
+| `list-attachments` | `GET /attachments?parent={parent_gid}` | `--parent-gid`, `--parent-type task\|project\|project-brief`, pagination flags, `--opt-fields` |
 | `get-attachment` | `GET /attachments/{gid}` | `--attachment-gid` (required), `--opt-fields` |
 | `download-attachment` | `GET /attachments/{gid}` then attachment `download_url` | `--attachment-gid`, `--output` (both required), `--overwrite` |
-| `add-attachment` | `POST /attachments` (multipart) | `--task-gid`, `--file` (both required), `--name`. Write command. |
+| `add-attachment` | `POST /attachments` (streamed multipart) | `--parent-gid`, `--parent-type`, `--file`; deprecated `--task-gid` alias; `--name`. Write command. |
+| `add-attachment-url` | `POST /attachments` (multipart URL fields) | `--parent-gid`, `--parent-type`, `--url` (HTTPS), `--name`. Write command. |
+| `delete-attachment` | `DELETE /attachments/{gid}` | `--attachment-gid`, `--confirm` or `--yes`. Write command. |
 | `comment-on-task` | `POST /tasks/{gid}/stories` | `--task-gid`, `--text` (both required). Write command. |
 | `create-task` | `POST /tasks` | `--name` plus workspace, project, or parent context; supports dates, notes, followers, sections, and custom fields. |
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 mutable field. Supports explicit clearing and tri-state booleans. |
@@ -251,10 +254,13 @@ asana-cli search-tasks --query 'custom_fields.111.value=222' \
 asana-cli get-task --task-gid 12345 --human
 asana-cli list-task-stories --task-gid 12345
 asana-cli list-task-attachments --task-gid 12345
+asana-cli list-attachments --parent-gid 12345 --parent-type task
 asana-cli get-attachment --attachment-gid 67890 --opt-fields name,download_url
 asana-cli download-attachment --attachment-gid 67890 --output ./Screenshot.png
-asana-cli add-attachment --task-gid 12345 --file ./Screenshot.png
-asana-cli add-attachment --task-gid 12345 --file ./out.log --name "run.log"
+asana-cli add-attachment --parent-gid 12345 --parent-type task --file ./Screenshot.png
+asana-cli add-attachment --task-gid 12345 --file ./out.log --name "run.log" # legacy alias
+asana-cli add-attachment-url --parent-gid 12345 --parent-type project --url https://example.com/design --name "Design doc"
+asana-cli delete-attachment --attachment-gid 67890 --yes
 asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
 asana-cli create-task --workspace-gid 12345 --name "Ship v2" --project-gid 67890 --due-on 2026-07-15
 asana-cli create-task --name "Subtask" --parent-task-gid 12345 --follower 67890
@@ -298,4 +304,15 @@ restrict its permissions (`chmod 600`). All API requests go over HTTPS to
 
 `download-attachment` writes attachment bytes only to the file named by
 `--output`. It refuses to overwrite existing files unless `--overwrite` is
-provided and removes partial output files when a download fails.
+provided and removes partial output files when a download fails. Download
+requests authenticate only to the configured Asana origin; external HTTPS
+`download_url` requests and redirects never receive the PAT, and external
+non-HTTPS downloads are rejected.
+
+Attachment parents may be tasks, projects, or project briefs. Asana enforces a
+100 MiB attachment limit. Local file uploads stream through a bounded-memory
+pipe and are not buffered in memory; cancellation and server failures stop the
+upload. `add-attachment-url` validates HTTPS URL
+syntax locally and passes the URL to Asana without fetching it from the CLI.
+The old `--task-gid` flag on `add-attachment` remains as a deprecated alias for
+`--parent-gid`. Attachment deletion requires explicit confirmation.
