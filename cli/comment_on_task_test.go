@@ -51,8 +51,8 @@ func TestCommentOnTaskHuman(t *testing.T) {
 
 func TestCommentOnTaskValidation(t *testing.T) {
 	cases := [][]string{
-		{"comment-on-task", "--text", "hi"},                  // missing task-gid
-		{"comment-on-task", "--task-gid", "42"},              // missing text
+		{"comment-on-task", "--text", "hi"},                    // missing task-gid
+		{"comment-on-task", "--task-gid", "42"},                // missing text
 		{"comment-on-task", "--task-gid", "42", "--text", " "}, // blank text
 	}
 	for _, args := range cases {
