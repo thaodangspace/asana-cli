@@ -9,7 +9,8 @@ This page is the declarative record for settings that are not reviewable as
 files in a pull request. Apply the settings in **Settings → Rules → Rulesets**
 and keep the exported ruleset JSON beside this document when GitHub changes it.
 The repository owner is responsible for reviewing the live settings after each
-change.
+change. The current live rulesets are `main-protection` (ID `20500926`) and
+`immutable-release-tags` (ID `20500927`); the `release` environment is active.
 
 ## `main` branch ruleset
 
