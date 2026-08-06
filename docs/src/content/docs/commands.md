@@ -83,6 +83,53 @@ values. First-class filters and `--query` compose in one request.
 Unlike collection endpoints, task search accepts one page only (up to 100
 results) and does not support `--offset`, `--all`, or `--max-pages` continuation.
 
+## Custom-field commands
+
+```sh
+asana-cli get-custom-field --custom-field-gid FIELD
+asana-cli list-workspace-custom-fields --workspace-gid WORKSPACE [pagination options]
+asana-cli create-custom-field --workspace-gid WORKSPACE --name NAME --resource-subtype enum
+asana-cli update-custom-field --custom-field-gid FIELD --description DESCRIPTION
+asana-cli delete-custom-field --custom-field-gid FIELD --yes
+asana-cli create-enum-option --custom-field-gid FIELD --name NAME [--color COLOR]
+asana-cli update-enum-option --enum-option-gid OPTION [--name NAME] [--color COLOR] [--enabled BOOL]
+asana-cli reorder-enum-option --custom-field-gid FIELD --enum-option-gid OPTION \
+  [--before OTHER_OPTION | --after OTHER_OPTION]
+asana-cli disable-enum-option --enum-option-gid OPTION
+asana-cli list-custom-field-settings --parent-gid PARENT --parent-type project|portfolio
+asana-cli add-custom-field-setting --parent-gid PARENT --parent-type project|portfolio \
+  --custom-field-gid FIELD [--is-important]
+asana-cli remove-custom-field-setting --parent-gid PARENT --parent-type project|portfolio \
+  --custom-field-gid FIELD
+```
+
+Custom-field definition flags include `--name`, `--description`,
+`--resource-subtype`, `--type`, `--precision`, `--currency-code`, `--format`,
+`--representation-options`, `--enum-options`, `--people-value`,
+`--input-restrictions`, `--custom-id-prefix`, `--custom-label`,
+`--custom-label-position`, `--is-global-to-workspace`, and `--owned-by-app`.
+JSON-valued definition flags are validated locally.
+Only explicitly supplied flags are sent by `update-custom-field`. Asana may
+reject a field subtype or setting for a workspace or plan; those API errors
+are preserved.
+
+Task custom-field assignments use the shared typed syntax
+`FIELD_GID=type:value`: `text`, `number`, `enum`, `multi-enum`, `date`, `people`,
+and `null` are supported. For example:
+
+```sh
+asana-cli update-task --task-gid TASK \
+  --custom-field FIELD=text:Ready \
+  --custom-field SCORE=number:12.50 \
+  --custom-field STATUS=enum:OPTION
+```
+
+Dates must be `YYYY-MM-DD`; people and multi-enum values are comma-separated
+GIDs with no duplicates. `number:` preserves the exact decimal value. Untyped
+values and the legacy `json:` escape hatch remain supported. See the dedicated
+[custom-field guide](/custom-fields/) for discovery, premium limitations, and
+full examples.
+
 ## Project and section lifecycle
 
 ```sh
@@ -174,15 +221,16 @@ asana-cli add-task-followers --task-gid TASK --follower me --follower USER
 
 `create-task` requires `--name` and at least one task context: workspace,
 project, or parent task. `--project-gid`, `--follower`, and `--custom-field`
-are repeatable. Custom-field scalar values are strings by default, preserving
-numeric Asana GIDs. Prefix values with `json:` for numbers, arrays
-(multi-enum/people), booleans, `null`, and quoted strings. For example:
+are repeatable. Custom-field values use `FIELD_GID=type:value` with `text`,
+`number`, `enum`, `multi-enum`, `date`, `people`, or `null` types. For example:
 
 ```sh
 asana-cli create-task --workspace-gid WORKSPACE --name "Ship v2" \
-  --custom-field 123=text --custom-field 456=json:42 \
-  --custom-field 789='json:["option-a","option-b"]'
+  --custom-field 123=text:Ready --custom-field 456=number:12.50 \
+  --custom-field 789='multi-enum:option-a,option-b'
 ```
+
+Untyped values and the legacy `json:` escape hatch remain supported.
 
 Date-only flags use `YYYY-MM-DD` and date-time flags use RFC 3339. A start date
 requires a matching due date in the same invocation. Date/date-time variants

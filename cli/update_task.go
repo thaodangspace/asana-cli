@@ -149,6 +149,6 @@ func newUpdateTaskCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&projects, "project-gid", nil, "replace project memberships (repeatable; empty value clears projects)")
 	cmd.Flags().StringVar(&sectionGID, "section-gid", "", "move into a section using Asana's section endpoint")
 	cmd.Flags().StringVar(&parentTaskGID, "parent-task-gid", "", "parent task GID; empty string clears the parent")
-	cmd.Flags().StringArrayVar(&customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; use json: for typed JSON)")
+	cmd.Flags().StringArrayVar(&customFields, "custom-field", nil, "custom field assignment FIELD_GID=type:value (repeatable; types: text, number, enum, multi-enum, date, people, null)")
 	return cmd
 }
