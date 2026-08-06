@@ -113,7 +113,7 @@ def verify_formula(dist: Path, archives: dict[tuple[str, str], str]) -> None:
         fail("Homebrew formula contains an invalid SHA-256")
 
 
-def verify_linux_binary(dist: Path, archives: dict[tuple[str, str], str]) -> None:
+def verify_linux_binary(dist: Path, archives: dict[tuple[str, str], str], expected_version: str) -> None:
     archive_path = dist / archives[("linux", "amd64")]
     with tempfile.TemporaryDirectory() as temporary:
         destination = Path(temporary)
@@ -129,8 +129,8 @@ def verify_linux_binary(dist: Path, archives: dict[tuple[str, str], str]) -> Non
         binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
         version = subprocess.run([str(binary), "--version"], check=False, capture_output=True, text=True)
         output = (version.stdout + version.stderr).strip()
-        if version.returncode != 0 or not output or re.search(r"\bdev\b", output, re.IGNORECASE):
-            fail("linux/amd64 snapshot does not report an injected non-dev version")
+        if version.returncode != 0 or not output or re.search(r"\bdev\b", output, re.IGNORECASE) or not re.search(rf"(?<![0-9A-Za-z]){re.escape(expected_version)}(?![0-9A-Za-z])", output):
+            fail("linux/amd64 snapshot does not report its injected snapshot version")
         help_result = subprocess.run([str(binary), "--help"], check=False, capture_output=True)
         if help_result.returncode != 0:
             fail("linux/amd64 snapshot --help failed")
@@ -141,10 +141,10 @@ def main() -> None:
     if not dist.is_dir():
         fail(f"distribution directory is missing: {dist}")
     artifacts = read_artifacts(dist)
-    archives, _version = verify_archives(dist, artifacts)
+    archives, version = verify_archives(dist, artifacts)
     verify_checksums(dist, archives)
     verify_formula(dist, archives)
-    verify_linux_binary(dist, archives)
+    verify_linux_binary(dist, archives, version)
     print("release snapshot artifact contract verified")
 
 

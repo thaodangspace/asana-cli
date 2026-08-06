@@ -236,8 +236,13 @@ jobs:
       - name: Build clean release snapshot
         run: goreleaser release --snapshot --clean
 
+      - name: Generate Homebrew formula for snapshot validation
+        run: python3 .github/scripts/generate-homebrew-formula.py dist
+
       - name: Verify source tree is unchanged
-        run: git diff --exit-code
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=all)"
 
       - name: Verify release snapshot artifacts
         run: python3 .github/scripts/verify-release-snapshot.py dist
