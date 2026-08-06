@@ -66,10 +66,19 @@ def manifest_assets(dist: Path) -> list[Path]:
         manifest = json.loads((dist / "release-manifest.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         fail(f"cannot read release manifest: {exc}")
-    names = [item["name"] for item in manifest.get("artifacts", [])]
-    names += ["checksums.txt", "release-manifest.json"]
+    names = []
+    for item in manifest.get("artifacts", []):
+        if not isinstance(item, dict):
+            fail("release manifest contains an invalid artifact")
+        name = item.get("filename", item.get("name"))
+        if not isinstance(name, str) or name not in names:
+            names.append(name)
+    if "checksums.txt" not in names:
+        names.append("checksums.txt")
+    if "release-manifest.json" not in names:
+        names.append("release-manifest.json")
     paths = [dist / name for name in names]
-    if len(names) != 6 or any(not path.is_file() for path in paths):
+    if len(names) != 10 or any(not path.is_file() for path in paths):
         fail("build artifact is missing one or more release assets")
     return paths
 

@@ -36,6 +36,8 @@ env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   GORELEASER_VERSION: v2.13.3
   GORELEASER_SHA256: 4b66f2f78f78561330350651ade557b70328664718490f37834749073af21d20
+  SYFT_VERSION: v1.31.0
+  SYFT_SHA256: aa60fbe2a32453e7dea991c9c5c616ae1fff0c51e910419ae53bc6555bfd2ce2
 
 jobs:
   release-preflight:
@@ -123,9 +125,22 @@ jobs:
       - name: Validate GoReleaser configuration
         run: goreleaser check
 
+      - name: Install pinned Syft
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/syft.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
+            --output "$archive"
+          echo "$SYFT_SHA256  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" syft
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          syft version
+
       - name: Re-run clean release snapshot contract
         run: |
           goreleaser release --snapshot --clean
+          python3 .github/scripts/generate-release-sboms.py dist --tool-version "${SYFT_VERSION#v}"
           python3 .github/scripts/generate-homebrew-formula.py dist
           python3 .github/scripts/verify-release-snapshot.py dist
 
@@ -179,13 +194,33 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP" goreleaser
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
+      - name: Install pinned Syft
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/syft.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz" \
+            --output "$archive"
+          echo "$SYFT_SHA256  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" syft
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          syft version
+
       - name: Build final artifacts once
         run: |
           set -euo pipefail
           goreleaser release --clean --skip=publish
-          python3 .github/scripts/build-release-manifest.py dist --tag "${{ needs.release-preflight.outputs.tag }}" --commit "${{ needs.release-preflight.outputs.commit }}"
+          python3 .github/scripts/generate-release-sboms.py dist --tool-version "${SYFT_VERSION#v}"
+          python3 .github/scripts/build-release-manifest.py dist \
+            --tag "${{ needs.release-preflight.outputs.tag }}" \
+            --commit "${{ needs.release-preflight.outputs.commit }}" \
+            --source-repository "${GITHUB_REPOSITORY}" \
+            --go-version "$(go env GOVERSION)" \
+            --goreleaser-version "$GORELEASER_VERSION"
           python3 .github/scripts/generate-homebrew-formula.py dist
-          python3 .github/scripts/verify-release.py dist --expected-version "${{ needs.release-preflight.outputs.version }}"
+          python3 .github/scripts/verify-release.py dist \
+            --expected-version "${{ needs.release-preflight.outputs.version }}" \
+            --repository "${GITHUB_REPOSITORY}"
           test -z "$(git status --porcelain --untracked-files=all)"
 
       - name: Publish artifact manifest summary
@@ -209,14 +244,52 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  attest-release:
+    name: attest-release
+    needs: [release-preflight, release-build]
+    if: github.event_name == 'push' || inputs.stage == 'full'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download exact build output
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-build
+          path: dist
+      - name: Verify subjects before attestation
+        run: python3 .github/scripts/verify-release.py dist --expected-version "${{ needs.release-preflight.outputs.version }}" --repository "${GITHUB_REPOSITORY}"
+      - name: Attest exact release subjects
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-path: |
+            dist/asana-cli_*.tar.gz
+            dist/checksums.txt
+            dist/release-manifest.json
+            dist/*.sbom.spdx.json
+      - name: Summarize attested subjects
+        run: |
+          {
+            echo "## Release provenance"
+            echo
+            echo "Attested exact bytes that the publish stage uploads:"
+            find dist -maxdepth 1 -type f \( -name 'asana-cli_*.tar.gz' -o -name 'checksums.txt' -o -name 'release-manifest.json' -o -name '*.sbom.spdx.json' \) -print | sort
+          } >> "$GITHUB_STEP_SUMMARY"
+
   publish-github-release:
     name: publish-github-release
-    needs: [release-preflight, release-build]
+    needs: [release-preflight, release-build, attest-release]
     if: >-
       always() && needs.release-preflight.result == 'success' &&
       (github.event_name == 'push' || inputs.stage == 'full' || inputs.stage == 'publish') &&
-      (inputs.stage != 'full' || needs.release-build.result == 'success')
+      (inputs.stage != 'full' || needs.release-build.result == 'success') &&
+      (inputs.stage != 'full' || needs.attest-release.result == 'success')
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 15
     permissions:
       contents: write
@@ -281,9 +354,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Verify public release assets, checksums, and Linux binary
+      - name: Verify public release assets, checksums, SBOMs, and provenance
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 .github/scripts/verify-public-release.py "${{ needs.release-preflight.outputs.tag }}"
 
   homebrew-verify:
