@@ -27,7 +27,7 @@ checksum:
   name_template: "checksums.txt"
 
 changelog:
-  use: github
+  use: git
   sort: asc
   filters:
     exclude:
@@ -35,17 +35,7 @@ changelog:
       - "^test:"
       - "^chore:"
 
-brews:
-  - name: asana-cli
-    repository:
-      owner: thaodangspace
-      name: homebrew-tap
-      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    homepage: "https://github.com/thaodangspace/asana-cli"
-    description: "Asana CLI for agents and humans (JSON output by default)"
-    license: "MIT"
-    directory: Formula
-    install: |
-      bin.install "asana-cli"
-    test: |
-      system "#{bin}/asana-cli", "--version"
+release:
+  github:
+    owner: thaodangspace
+    name: asana-cli
