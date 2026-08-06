@@ -24,7 +24,9 @@ cli/                           # Cobra command tree (one file per subcommand)
   output.go                    #   {ok,data} / {ok,error} envelopes, summarizers, humanList
   me.go list_workspaces.go list_projects.go search_tasks.go
   get_task.go list_task_stories.go comment_on_task.go update_task.go
-  list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go api.go
+  list_task_attachments.go get_attachment.go download_attachment.go add_attachment.go
+  custom_fields.go               #   definitions, enum options, settings, and typed task values
+  api.go
   task_graph.go                  #   subtasks, parents, dependencies, projects, tags, followers
 docs/                           # Astro/Starlight static documentation site
 ```
@@ -70,6 +72,12 @@ docs/                           # Astro/Starlight static documentation site
   `--file`), with `--name` overriding the display/file name (defaults to the
   file's base name). Missing flags and a nonexistent/unreadable `--file` are
   usage errors (exit 2). Multipart uploads are one-shot and are never retried.
+- **Custom fields:** definition updates send only explicitly changed flags;
+  enum options support creation, update, disable, and ordering; settings use
+  `--parent-type project|portfolio`. Task assignments share a typed parser for
+  text, number, enum, multi-enum, date, people, and null values. Typed numbers
+  use `json.Number` to preserve precision; unsupported premium or permission
+  features return Asana's API error.
 
 ## Testing
 

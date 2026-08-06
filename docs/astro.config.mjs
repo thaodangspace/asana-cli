@@ -32,6 +32,7 @@ export default defineConfig({
           label: 'Using asana-cli',
           items: [
             { label: 'Commands', slug: 'commands' },
+            { label: 'Custom fields', slug: 'custom-fields' },
             { label: 'Output and errors', slug: 'output-and-errors' },
             { label: 'Configuration and security', slug: 'configuration-security' },
           ],

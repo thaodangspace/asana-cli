@@ -70,7 +70,9 @@ commands require either it or an explicit `--workspace-gid`.
 Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 `tasks:read`, `stories:read`, `attachments:read`, `attachments:write` for
 `add-attachment`, `stories:write` for `comment-on-task`, and `tasks:write` for
-`create-task`, `update-task`, `duplicate-task`, and `delete-task`.
+`create-task`, `update-task`, `duplicate-task`, and `delete-task`. Custom-field
+management also requires the scopes and Asana plan permissions for the
+workspace, project, or portfolio being changed.
 
 ## Global flags
 
@@ -104,6 +106,16 @@ Recommended token scopes: `users:read`, `workspaces:read`, `projects:read`,
 | `update-task` | `PUT /tasks/{gid}` | `--task-gid` (required) plus ≥1 mutable field. Supports explicit clearing and tri-state booleans. |
 | `delete-task` | `DELETE /tasks/{gid}` | `--task-gid` and `--confirm` or `--yes`. Returns `data: null`. |
 | `duplicate-task` | `POST /tasks/{gid}/duplicate` | `--task-gid`, `--name`, and repeatable/comma-separated `--include` options. Returns an asynchronous job. |
+| `get-custom-field` | `GET /custom_fields/{gid}` | `--custom-field-gid`, `--opt-fields` |
+| `list-workspace-custom-fields` | `GET /workspaces/{gid}/custom_fields` | `--workspace-gid`, pagination flags, `--opt-fields` |
+| `create-custom-field` | `POST /workspaces/{gid}/custom_fields` | Definition flags such as `--name`, `--resource-subtype`, `--precision`, and JSON representation options. |
+| `update-custom-field` | `PUT /custom_fields/{gid}` | Partial definition update; only changed flags are sent. |
+| `delete-custom-field` | `DELETE /custom_fields/{gid}` | Requires `--confirm` or `--yes`. |
+| `create-enum-option`, `update-enum-option`, `disable-enum-option` | Enum option endpoints | Create, edit, or disable options by GID. |
+| `reorder-enum-option` | `POST /custom_fields/{gid}/enum_options/insert` | Requires exactly one `--before` or `--after`. |
+| `list-custom-field-settings` | `GET /{projects\|portfolios}/{gid}/custom_field_settings` | `--parent-gid`, required `--parent-type`, pagination flags. |
+| `add-custom-field-setting` | `POST /{projects\|portfolios}/{gid}/custom_field_settings` | `--parent-gid`, `--parent-type`, `--custom-field-gid`, optional `--is-important`. |
+| `remove-custom-field-setting` | `DELETE /{projects\|portfolios}/{gid}/custom_field_settings/{field_gid}` | Removes a field from a project or portfolio. |
 | `list-subtasks`, `list-dependencies`, `list-dependents` | `GET /tasks/{gid}/{relationship}` | `--task-gid`, pagination flags, and `--opt-fields`. |
 | `create-subtask` | `POST /tasks/{gid}/subtasks` | `--task-gid`, `--name`, and common task fields. |
 | `set-task-parent`, `remove-task-parent` | `POST /tasks/{gid}/setParent` | Set or clear a task parent. |
@@ -130,10 +142,11 @@ custom-field and future search parameters; conflicting scalar keys are
 rejected and `limit`/`offset` cannot be overridden. `--completed` is tri-state:
 omitted entirely unless you pass it (`--completed=true` or
 `--completed=false`). Task creation requires `--name` and a workspace, project,
-or parent context. `--project-gid`, `--follower`, and `--custom-field` are repeatable. Custom field scalar values
-are strings by default, preserving numeric Asana GIDs; prefix values with
-`json:` for numbers, arrays, booleans, null, or quoted strings (for example
-`--custom-field 123=json:["option-a","option-b"]`). Date-only flags use
+or parent context. `--project-gid`, `--follower`, and `--custom-field` are repeatable. Custom-field
+values use `FIELD_GID=type:value` with `text`, `number`, `enum`, `multi-enum`,
+`date`, `people`, or `null` types (for example
+`--custom-field 123=multi-enum:option-a,option-b`). Untyped values and the
+legacy `json:` escape hatch remain supported. Date-only flags use
 `YYYY-MM-DD`; date-time flags use RFC 3339. A start date requires the matching
 due date in the same invocation, and date/date-time variants cannot be mixed.
 `--notes` and `--html-notes` are mutually exclusive. Update project, section,
@@ -147,6 +160,14 @@ stop when `--timeout` or the command context is canceled. JSON POST/PUT requests
 and multipart uploads are intentionally not retried because they may mutate
 Asana more than once. Use `--no-retry` for one-shot behavior. With `--verbose`,
 retry attempts are logged to stderr with only the method and safe path.
+
+Task custom-field values use one shared typed syntax across `create-task` and
+`update-task`: `FIELD_GID=text:value`, `number:value`, `enum:OPTION_GID`,
+`multi-enum:OPTION_1,OPTION_2`, `date:YYYY-MM-DD`, `people:USER_1,USER_2`, or
+`null`. Dates and structured values are validated locally, and typed numbers
+preserve their exact decimal representation. Untyped values and the legacy
+`json:` escape hatch remain supported. See the [custom-field guide](docs/src/content/docs/custom-fields.md)
+for discovery, enum lookup, settings, premium limitations, and examples.
 
 The advanced `api` command supports authenticated GET, POST, PUT, PATCH, and
 DELETE requests to relative paths under the Asana API base:
@@ -246,6 +267,10 @@ asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
 asana-cli update-task --task-gid 12345 --assignee me --notes "Reassigned."
 asana-cli delete-task --task-gid 12345 --yes
 asana-cli duplicate-task --task-gid 12345 --name "Copy of Ship v2" --include subtasks,dependencies
+asana-cli list-workspace-custom-fields --workspace-gid 12345
+asana-cli create-custom-field --workspace-gid 12345 --name Priority --resource-subtype enum
+asana-cli create-enum-option --custom-field-gid 67890 --name High --color red
+asana-cli update-task --task-gid 12345 --custom-field 67890=enum:option-gid
 asana-cli create-subtask --task-gid 12345 --name "Write release notes" --assignee me
 asana-cli add-dependency --task-gid 12345 --dependency-task-gid 67890
 asana-cli add-task-to-project --task-gid 12345 --project-gid 67890 --section-gid 999

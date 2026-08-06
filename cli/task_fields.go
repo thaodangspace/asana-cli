@@ -1,59 +1,11 @@
 package cli
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 )
-
-// parseCustomFields accepts FIELD_GID=VALUE assignments. Scalar values remain
-// strings so numeric Asana enum/people GIDs cannot be accidentally converted to
-// numbers. Prefix a value with json: to send a JSON number, boolean, null,
-// array, object, or quoted string. This covers Asana text, number, enum,
-// multi-enum, date, and people custom fields without requiring field metadata.
-func parseCustomFields(assignments []string) (map[string]any, error) {
-	if len(assignments) == 0 {
-		return nil, nil
-	}
-	fields := make(map[string]any, len(assignments))
-	for _, assignment := range assignments {
-		separator := strings.IndexByte(assignment, '=')
-		if separator <= 0 {
-			return nil, usageErrorf("--custom-field must use FIELD_GID=VALUE form, got %q", assignment)
-		}
-		gid := strings.TrimSpace(assignment[:separator])
-		if gid == "" {
-			return nil, usageErrorf("--custom-field field GID must not be empty")
-		}
-		if _, exists := fields[gid]; exists {
-			return nil, usageErrorf("duplicate --custom-field assignment for %q", gid)
-		}
-
-		raw := strings.TrimSpace(assignment[separator+1:])
-		if raw == "" {
-			// An empty value is the convenient command-line spelling for clearing
-			// a custom field; null is the representation accepted by Asana.
-			fields[gid] = nil
-			continue
-		}
-		if !strings.HasPrefix(raw, "json:") {
-			fields[gid] = raw
-			continue
-		}
-		raw = strings.TrimSpace(strings.TrimPrefix(raw, "json:"))
-		if raw == "" || !json.Valid([]byte(raw)) {
-			return nil, usageErrorf("--custom-field json value for %q must be valid JSON", gid)
-		}
-		var value any
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
-			return nil, usageErrorf("invalid --custom-field value for %q: %v", gid, err)
-		}
-		fields[gid] = value
-	}
-	return fields, nil
-}
 
 func validateDate(value, flag string) (any, error) {
 	value = strings.TrimSpace(value)
@@ -215,7 +167,7 @@ func (f *commonTaskFields) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.startAt, "start-at", "", "start date-time in RFC 3339")
 	cmd.Flags().StringVar(&f.assignee, "assignee", "", "assignee user GID or me")
 	cmd.Flags().StringArrayVar(&f.followers, "follower", nil, "follower user GID (repeatable; empty value clears followers)")
-	cmd.Flags().StringArrayVar(&f.customFields, "custom-field", nil, "custom field assignment FIELD_GID=VALUE (repeatable; use json: for typed JSON)")
+	cmd.Flags().StringArrayVar(&f.customFields, "custom-field", nil, "custom field assignment FIELD_GID=type:value (repeatable; types: text, number, enum, multi-enum, date, people, null)")
 }
 
 func (f *commonTaskFields) addTo(cmd *cobra.Command, data map[string]any) error {
