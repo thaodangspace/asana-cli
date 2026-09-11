@@ -71,7 +71,7 @@ code** and, for HTTP failures, on `error.status`.
 | `download-attachment` | `--attachment-gid`, `--output` | `--overwrite` to replace an existing file |
 | `add-attachment` | `--task-gid`, `--file` | **Asana write.** `--name` overrides the display name (defaults to the file's base name) |
 | `comment-on-task` | `--task-gid`, `--text` | **Asana write command** |
-| `update-task` | `--task-gid` + ≥1 field | **Asana write.** Fields: `--name`, `--notes`, `--completed`, `--due-on` (`YYYY-MM-DD`), `--assignee` (GID or `me`) |
+| `update-task` | `--task-gid` + ≥1 field | **Asana write.** Fields: `--name`, `--notes`, `--completed`, `--due-on` (`YYYY-MM-DD`), `--assignee` (GID or `me`), `--custom-field` (`FIELD_GID=type:value`, repeatable — see **Custom fields**) |
 
 ### Global flags
 
@@ -96,6 +96,27 @@ code** and, for HTTP failures, on `error.status`.
 - `add-attachment` uploads a local `--file` to a task; a missing or unreadable
   file is a usage error (exit 2). It needs the `attachments:write` token scope.
 
+### Custom fields
+
+`update-task --custom-field FIELD_GID=type:value` sets a custom field (repeat the
+flag to set several in one call). No raw API/curl needed. Discover `FIELD_GID` —
+and enum option GIDs — with
+`get-task --task-gid <gid> --opt-fields custom_fields.name,custom_fields.gid,custom_fields.type`.
+
+| Type | Value form | Example |
+|------|-----------|---------|
+| text | `text:<string>` | `--custom-field 120…667=text:https://bitbucket.org/acme/repo/pull-requests/741` |
+| number | `number:<json-number>` | `--custom-field 120…=number:3` |
+| enum | `enum:<option_gid>` | `--custom-field 120…=enum:456` |
+| multi-enum | `multi-enum:<gid>,<gid>` | `--custom-field 120…=multi-enum:456,789` |
+| date | `date:YYYY-MM-DD` | `--custom-field 120…=date:2026-09-11` |
+| people | `people:<user_gid>,<user_gid>` | `--custom-field 120…=people:99` |
+| clear | `null` (or empty) | `--custom-field 120…=null` |
+
+An untyped `FIELD_GID=value` (no `type:` prefix) is sent as-is (text). A `text:`
+value keeps every colon after the first one, so URLs pass through intact.
+`json:<raw>` is an escape hatch for a pre-formed JSON value.
+
 ## Examples
 
 ```bash
@@ -115,6 +136,7 @@ asana-cli comment-on-task --task-gid 12345 --text "Taking a look."
 asana-cli update-task --task-gid 12345 --completed        # mark done
 asana-cli update-task --task-gid 12345 --name "Ship v2" --due-on 2026-07-15
 asana-cli update-task --task-gid 12345 --assignee "" --due-on ""   # unassign + clear due date
+asana-cli update-task --task-gid 12345 --custom-field '1202385931581667=text:https://bitbucket.org/acme/repo/pull-requests/741'   # set a text custom field
 ```
 
 ### Piping with jq
